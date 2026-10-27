@@ -25,3 +25,4 @@ eclipse
 run
 /.tmp
 CHANGELOG.md
+/logs
