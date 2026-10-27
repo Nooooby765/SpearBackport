@@ -6,8 +6,8 @@ Faithfully backports the **Minecraft 1.21.11 Spear** to **Minecraft 1.12.2 Forge
 
 - **License:** MIT
 - **Build:** RetroFuturaGradle 2.0 + JDK 25, Java 8 bytecode target
-- **No mixins, no ASM, no coremod** — plain Forge events, one item-use callback, three client hooks
-  and one tiny client-to-server jab packet.
+- **No mixins, no ASM, no coremod** — plain Forge events, one access transformer (a single field),
+  one item-use callback, three client hooks and one tiny client-to-server jab packet.
 - **Procedural in-hand animation** — the 1.21.11 charge and stab poses, replayed on the item itself
   (first and third person) from the held time and the swing progress. No GeckoLib, no keyframes.
 - **No idle overhead:** no global tick handler, and no render work at all for an item that is not a
@@ -44,12 +44,16 @@ Durability and enchantability come straight from the vanilla tool materials, so 
 - Requires a **fully charged attack meter** (`MINIMUM_ATTACK_CHARGE = 1.0`). An early click is
   refused and does **not** reset the meter. 1.21.11 returns before the swing when
   `cannotAttackWithItem` rejects the attack, so a refused click here does nothing at all: no arm
-  swing, no stab animation, no sound (`SpearItem.onEntitySwing`).
+  swing, no stab animation, no sound, no damage (`SpearItem.onEntitySwing`).
 - The spear's own cooldown is its attack speed, which is also the length of the 1.21.11
-  `SwingAnimation(STAB, attackDuration × 20)`. The vanilla attack meter is deliberately **not**
-  reset by a jab, exactly like `PiercingWeapon#attack` calling
-  `swingAndResetAttackStrength(..., resetAttackStrength = false)`. That is why a spear never does
-  the "tool slowly rises while the attack indicator refills" motion that swords and axes have.
+  `SwingAnimation(STAB, attackDuration × 20)`. The attack meter tracks that cooldown so the vanilla
+  attack indicator doubles as the spear's cooldown bar, and the in-hand rise that the meter
+  normally drives is suppressed (see [In-hand animation](#in-hand-animation)), so the bar moves
+  without the weapon twitching.
+- **A refused click is free.** 1.12.2 empties the meter from `Minecraft#clickMouse` before the item
+  is even consulted, so the value is put back from the authoritative jab tick. That is the only
+  reason this mod ships an access transformer: `EntityLivingBase.ticksSinceLastSwing` has no public
+  setter.
 - Damage = the player's `ATTACK_DAMAGE` attribute (so Strength/Weakness and the spear's own
   modifier apply) plus Sharpness / Smite / Bane of Arthropods.
 - Applies Knockback, Fire Aspect, Looting (through the normal death path), thorns retaliation and
@@ -141,11 +145,13 @@ Three consequences are worth knowing:
   consulted, so a spear jab would otherwise be a -80° chop with a thrust added on top.
   `RenderSpecificHandEvent` re-submits that hand with zero swing progress, which puts the item in
   the neutral hand pose the 1.21.11 stab expects. Nothing is drawn twice and no GL state is touched.
-- The same hook removes the **attack cooldown rise**. 1.12.2 raises the hand item from
-  `1 - cooledAttackStrength³` back to the neutral height while the attack indicator refills; 1.21.11
-  does the same in `ItemInHandRenderer.tick()`, but its stab never resets the attack meter, so the
-  spear never shows that motion. The attack part is subtracted from the hand height, leaving the
-  item-swap dip intact.
+- The same hook removes the **attack cooldown rise**. 1.12.2 lowers the hand item towards
+  `1 - cooledAttackStrength³` and raises it again as the meter refills. The height is replaced with
+  a constant while the meter is refilling rather than subtracting the analytic term: the vanilla
+  value is a per-tick figure interpolated with partial ticks while the analytic term is a per-tick
+  step, and their difference wobbles by a fraction of a block, which reads as a twitch. A constant
+  is exact; the only thing lost is the item-swap dip during the few ticks a refill lasts, and idle
+  frames never take the hand over at all.
 - Third person needs to know which player is being drawn, which 1.12.2 does not provide. The player
   is published around `RenderPlayerEvent.Pre/Post` (four field writes per rendered player) and
   re-validated against the hand and the item before use.
@@ -221,7 +227,7 @@ Always-on work, in full:
 | Hook | Cost when nothing is happening |
 |------|--------------------------------|
 | `RenderPlayerEvent.Pre/Post` | four field writes per rendered player per frame (publishes the player being drawn, see above) |
-| `RenderSpecificHandEvent` | one `instanceof` per rendered hand per frame; for a spear hand one cooldown lookup, and vanilla's own draw is kept unless the swing must be hidden or the hand height corrected |
+| `RenderSpecificHandEvent` | one `instanceof` and one float compare per rendered hand per frame; the hand is only taken over when the swing must be hidden or the meter is refilling, so an idle spear is drawn by vanilla itself |
 | `InputUpdateEvent` | two field reads per client tick |
 | `Item.onEntitySwing` | one `instanceof`, one `isUser()` and one int compare per swing |
 | `AttackEntityEvent` / `LeftClickBlock` | only on an actual interaction |
@@ -254,19 +260,16 @@ Deliberately not changed, because the trade-off would not be free:
 - Mounted AI and mob spear spawning are intentionally out of scope.
 - Only the **item** is animated. In 1.21.11 the arm and body follow the spear (`HumanoidModel`'s
   SPEAR pose plus `thirdPersonAttackHand`); 1.12.2 gives no hook between the arm rotation and the
-  item transform, and doing it properly needs a custom `RenderPlayer`, an access transformer or a
-  mixin. None of those were added.
+  item transform, and doing it properly needs a custom `RenderPlayer` or a mixin. Neither was added.
 - Because the arm is left alone, a first person jab holds the arm still and lets the spear thrust,
   and a third person jab keeps vanilla's WHACK arm swing underneath the stab.
 - The kinetic hit feedback (`ticksSinceKineticHitFeedback`, a 10 tick recoil) needs a server to
   client packet for every hit. It is omitted; the animation is time-driven only.
 - A refused click is invisible to the player, but 1.12.2 sends `CPacketAnimation` from
   `EntityPlayerSP#swingArm` unconditionally and after the item has already been consulted. The
-  server therefore still broadcasts the arm swing to observers; only the local arm, the spear pose
-  and the sound are suppressed. Hiding it for observers too would need a hook 1.12.2 does not have.
-- Spam-clicking empty air still drains the vanilla attack indicator, because `Minecraft#clickMouse`
-  resets it before the item is asked. The spear's own cooldown is unaffected (`SpearJabState`
-  decides) and the hand item no longer rises with the indicator either way.
+  server therefore still broadcasts the arm swing to observers; only the local arm, the spear pose,
+  the meter and the sound are suppressed. Hiding it for observers too would need a hook 1.12.2 does
+  not have.
 - Lunge fires on every valid jab, including a whiff, matching `postPiercingAttack`.
 
 ## Build
@@ -276,7 +279,7 @@ $env:JAVA_HOME = "F:\jdk25\jdk-25.0.4.1+1"   # any JDK 25 install
 .\gradlew.bat build
 ```
 
-Output: `build/libs/spearbackport-0.3.0.jar`
+Output: `build/libs/spearbackport-0.4.0.jar`
 
 The sound assets are committed, so building does not need Python. To regenerate them:
 

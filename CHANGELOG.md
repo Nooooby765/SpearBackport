@@ -3,7 +3,7 @@
 Pre-1.0: the backport is feature complete but still being polished, so minor versions may still
 change behaviour, feel or assets.
 
-## [0.3.0] - 2026-10-27
+## [0.4.0] - 2026-10-27
 
 ### Added
 
@@ -65,8 +65,12 @@ change behaviour, feel or assets.
 - Fixed the crafting recipe orientation (diagonal, matching 1.21.11).
 - Replaced the ineffective end-of-tick movement restore with an `InputUpdateEvent` correction.
 - Fixed the spear slowly rising while the attack indicator refilled after every jab, which a
-  1.21.11 spear never does.
+  1.21.11 spear never does. The hand height is now a constant while the meter refills instead of a
+  difference of two differently interpolated values, which left a visible twitch.
 - Fixed uncharged left clicks still swinging the arm and playing the stab animation.
+- Fixed a refused click still emptying the attack meter, so the HUD bar restarted as if the spear
+  had swung. The value is restored from the authoritative jab tick; this is the one reason the mod
+  now ships a single access transformer (`EntityLivingBase.ticksSinceLastSwing`).
 
 ### Changed
 
@@ -77,7 +81,10 @@ change behaviour, feel or assets.
 - The animation skips the identity pose states (start of a charge and the settled tail) and bails
   out of the render path before any hand lookup when the spear is idle.
 - The first person hand takeover is skipped entirely when nothing needs correcting, so a held spear
-  costs vanilla's own draw in the steady state.
+  costs vanilla's own draw in the steady state, and the cooldown probe is skipped with it.
+- The attack meter now mirrors the spear's own cooldown, so the vanilla attack indicator doubles as
+  the cooldown bar that the deliberately short stab animation cannot provide. A refused click still
+  refunds it.
 - The charge tick leaves before sampling motion once the charge has expired or before it activates.
 
 ### Removed

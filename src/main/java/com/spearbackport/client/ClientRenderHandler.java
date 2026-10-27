@@ -21,9 +21,9 @@ import net.minecraftforge.fml.relauncher.Side;
  *   <li>{@link RenderPlayerEvent} publishes the player being drawn so third
  *       person items can read their charge and stab state (see
  *       {@link SpearRenderContext}).</li>
- *   <li>{@link RenderSpecificHandEvent} re-submits the first person spear hand
- *       when it has to differ from vanilla. Two things can differ, and both come
- *       straight from the 1.21.11 renderer and item components.</li>
+ *   <li>{@link RenderSpecificHandEvent} re-submits the first person spear hand,
+ *       but only on the frames where it would actually differ from vanilla.
+ *       Idle frames cost one {@code instanceof} and one float compare.</li>
  * </ul>
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID, value = Side.CLIENT)
@@ -54,50 +54,48 @@ public final class ClientRenderHandler {
         }
 
         EnumHand hand = event.getHand();
+        float equip = event.getEquipProgress();
         // A jab must not keep the vanilla WHACK. 1.12.2 has no per-item swing
         // type, so the hand is already rotated by up to -80 degrees before the
         // item transform is consulted; submitting zero swing progress is the
         // neutral hand frame the 1.21.11 stab pose is written for.
         boolean jab = player.swingingHand == hand
                 && (player.isSwingInProgress || event.getSwingProgress() > 0.0F);
-        // Vanilla only drives the main hand from the attack meter; the off hand
-        // always recovers to a constant height, so there is nothing to subtract.
-        float cooldownRise = hand == EnumHand.MAIN_HAND ? cooldownRise(player) : 0.0F;
-        if (!jab && cooldownRise <= 0.0F) {
-            // Vanilla would draw exactly this frame, so do not take it over.
+        // Vanilla only lowers the main hand for the attack meter; the off hand
+        // always recovers to a constant height. A spear must not be lowered for
+        // the meter at all, so when that is the only reason it is down, the hand
+        // is submitted at full height instead.
+        boolean cooldownDriven = hand == EnumHand.MAIN_HAND && equip > 0.0F
+                && meterRefilling(player);
+        if (!jab && !cooldownDriven) {
+            // Vanilla would draw exactly this frame: do not take it over.
             return;
         }
 
         event.setCanceled(true);
-        float armHeight = cooldownRise <= 0.0F
-                ? event.getEquipProgress()
-                : Math.max(0.0F, event.getEquipProgress() - cooldownRise);
         minecraft.getItemRenderer().renderItemInFirstPerson(player, event.getPartialTicks(),
                 event.getInterpolatedPitch(), hand, jab ? 0.0F : event.getSwingProgress(),
-                event.getItemStack(), armHeight);
+                event.getItemStack(), cooldownDriven ? 0.0F : equip);
     }
 
     /**
-     * How much of the vanilla hand height is the attack cooldown, in the same
-     * units as {@code inverseArmHeight} (0 = fully raised, 1 = fully lowered).
+     * True while the vanilla attack meter is refilling, i.e. while 1.12.2 would
+     * be lowering and then raising the held item.
      *
-     * <p>1.12.2 moves the first person item down by {@code 1 - equippedProgress}
-     * blocks and refills {@code equippedProgress} towards
-     * {@code cooledAttackStrength³}, which is the "tool slowly rises while the
-     * attack indicator recharges" motion. 1.21.11 does the same in
-     * {@code ItemInHandRenderer.tick()}, but its stab goes through
-     * {@code PiercingWeapon#attack}, which calls
+     * <p>1.12.2 drives the hand height towards {@code cooledAttackStrength³} and
+     * 1.21.11 does the same in {@code ItemInHandRenderer#tick}, but a 1.21.11
+     * stab goes through {@code PiercingWeapon#attack}, which calls
      * {@code swingAndResetAttackStrength(..., resetAttackStrength = false)}: a
-     * spear jab never resets the attack meter, so the spear never sees that
-     * motion. Swords and axes do reset it, which is why they still bob.
+     * spear never consumes the meter, so its spear never shows that motion.
      *
-     * <p>Subtracting it leaves only the item-swap animation, so switching to a
-     * spear still plays vanilla's equip dip. The result is exactly zero whenever
-     * the meter is full — the normal state for a spear — so the common frame
-     * never triggers a takeover.
+     * <p>The height is replaced with a constant rather than subtracting the
+     * analytic term: {@code equipProgress} is a per-tick value interpolated with
+     * partial ticks, while the analytic term is a per-tick step, and their
+     * difference wobbles by a fraction of a block — visible as a twitch. A
+     * constant is exact, and the only thing lost is the item-swap dip during the
+     * few ticks a refill lasts.
      */
-    private static float cooldownRise(EntityPlayer player) {
-        float charge = player.getCooledAttackStrength(1.0F);
-        return 1.0F - charge * charge * charge;
+    private static boolean meterRefilling(EntityPlayer player) {
+        return player.getCooledAttackStrength(1.0F) < 1.0F;
     }
 }

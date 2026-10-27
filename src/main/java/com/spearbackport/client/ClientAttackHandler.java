@@ -7,6 +7,7 @@ import com.spearbackport.network.MessageSpearJab;
 import com.spearbackport.network.SpearNetwork;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
@@ -72,10 +73,10 @@ public final class ClientAttackHandler {
         }
         if (player.isSpectator() || !ready(player)) {
             SpearJabState.refuse();
+            restoreMeter(player);
             return;
         }
-        lastAttackTick = player.ticksExisted;
-        SpearJabState.approve(player.ticksExisted);
+        accept(player);
     }
 
     private static void tryAttack(EntityPlayer player) {
@@ -84,34 +85,62 @@ public final class ClientAttackHandler {
         }
         if (player.isSpectator() || !ready(player)) {
             SpearJabState.refuse();
+            restoreMeter(player);
             return;
         }
 
         Minecraft minecraft = Minecraft.getMinecraft();
         if (minecraft.getConnection() == null) {
             SpearJabState.refuse();
+            restoreMeter(player);
             return;
         }
 
-        lastAttackTick = player.ticksExisted;
-        SpearJabState.approve(player.ticksExisted);
+        accept(player);
         SpearNetwork.CHANNEL.sendToServer(new MessageSpearJab());
     }
 
+    /** The click became a jab: let it swing and start the cooldown. */
+    private static void accept(EntityPlayer player) {
+        lastAttackTick = player.ticksExisted;
+        player.resetCooldown();
+        SpearJabState.approve(player.ticksExisted);
+    }
+
     /**
-     * The spear's own attack cooldown.
-     *
-     * <p>1.21.11 gives the stab a {@code SwingAnimation} whose duration is
-     * {@code attackDuration * 20} ticks and never resets the attack strength
-     * meter, so the weapon's real cooldown is exactly its attack speed. The
-     * vanilla attack meter is deliberately left untouched here: resetting it is
-     * what makes 1.12.2 slide the spear down and slowly raise it again while the
-     * indicator refills, which a 1.21.11 spear never does.
+     * The spear's own attack cooldown: its attack speed, which is also the length
+     * of the 1.21.11 {@code SwingAnimation(STAB, attackDuration * 20)}.
      */
-    private static boolean ready(EntityPlayer player) {
+    private static int period(EntityPlayer player) {
         double speed = player.getEntityAttribute(SharedMonsterAttributes.ATTACK_SPEED).getAttributeValue();
-        int period = speed <= 0.0D ? 20 : (int) Math.round(20.0D / speed);
-        return player.ticksExisted - lastAttackTick >= period;
+        return speed <= 0.0D ? 20 : (int) Math.round(20.0D / speed);
+    }
+
+    private static boolean ready(EntityPlayer player) {
+        return player.ticksExisted - lastAttackTick >= period(player);
+    }
+
+    /**
+     * Undoes the attack meter that 1.12.2 emptied for a click that did nothing.
+     *
+     * <p>{@code Minecraft#clickMouse} calls {@code Player#resetCooldown()}
+     * unconditionally for a click at empty air, before the item is even
+     * consulted, so the HUD bar would restart as if the spear had swung. A spear
+     * jab must not cost anything, so the value is put back — from
+     * {@link #lastAttackTick}, which is the authority, so the bar lands exactly
+     * where it was instead of jumping.
+     *
+     * <p>The write needs {@code EntityLivingBase.ticksSinceLastSwing}, which has
+     * no public setter; {@code spearbackport_at.cfg} opens it up.
+     */
+    private static void restoreMeter(EntityPlayer player) {
+        EntityLivingBase base = player;
+        if (base.ticksSinceLastSwing != 0) {
+            // Nothing was consumed by this click, so there is nothing to restore.
+            return;
+        }
+        int elapsed = player.ticksExisted - lastAttackTick;
+        base.ticksSinceLastSwing = Math.max(0, Math.min(elapsed, period(player)));
     }
 
     private static boolean isSpear(EntityPlayer player) {
