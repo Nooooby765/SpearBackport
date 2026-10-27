@@ -55,6 +55,18 @@ public final class SpearUseParams {
     }
 
     /**
+     * True when every translate and rotate of the pose is a no-op.
+     *
+     * <p>That is the case before the rise begins and again once the spear has
+     * settled back at the very end of the charge, which together cover the whole
+     * idle part of a long hold. Both callers can then skip the pose entirely and
+     * reuse the cached display transform, without allocating anything.
+     */
+    public boolean isNeutral() {
+        return raise <= 0.0F || raiseBack >= 1.0F;
+    }
+
+    /**
      * @param tier     the spear tier, holding the 1.21.11 charge timings
      * @param timeHeld ticks the item has been in use, with partial ticks applied
      */

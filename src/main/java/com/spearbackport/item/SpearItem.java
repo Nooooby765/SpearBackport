@@ -1,10 +1,10 @@
 package com.spearbackport.item;
 
-import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
 import com.spearbackport.SpearBackportMod;
 import com.spearbackport.combat.SpearCombat;
+import com.spearbackport.combat.SpearJabState;
 import com.spearbackport.init.ModSounds;
 
 import net.minecraft.block.state.IBlockState;
@@ -48,11 +48,25 @@ public class SpearItem extends ItemSword {
     /** Hold time is effectively "until released"; the charge itself expires first. */
     private static final int USE_DURATION = 72000;
 
+    /** Shared empty result for the slots a spear never modifies. */
+    private static final Multimap<String, AttributeModifier> NO_MODIFIERS = ImmutableMultimap.of();
+
     private final SpearMaterial tier;
+    /** Built once: the tooltip asks for the modifiers on every inventory frame. */
+    private final Multimap<String, AttributeModifier> mainHandModifiers;
 
     public SpearItem(SpearMaterial tier) {
         super(tier.toolMaterial);
         this.tier = tier;
+        // Player baseline in 1.12.2: 1.0 attack damage, 4.0 attack speed.
+        this.mainHandModifiers = ImmutableMultimap.<String, AttributeModifier>builder()
+                .put(SharedMonsterAttributes.ATTACK_DAMAGE.getName(),
+                        new AttributeModifier(ATTACK_DAMAGE_MODIFIER, "Weapon modifier",
+                                tier.jabDamage - 1.0D, 0))
+                .put(SharedMonsterAttributes.ATTACK_SPEED.getName(),
+                        new AttributeModifier(ATTACK_SPEED_MODIFIER, "Weapon modifier",
+                                tier.attackSpeed - 4.0D, 0))
+                .build();
         setRegistryName(SpearBackportMod.MOD_ID, tier.registryName + "_spear");
         setTranslationKey(SpearBackportMod.MOD_ID + "." + tier.registryName + "_spear");
         setCreativeTab(net.minecraft.creativetab.CreativeTabs.COMBAT);
@@ -68,22 +82,31 @@ public class SpearItem extends ItemSword {
 
     @Override
     public Multimap<String, AttributeModifier> getAttributeModifiers(EntityEquipmentSlot slot, ItemStack stack) {
-        if (slot != EntityEquipmentSlot.MAINHAND) {
-            return ImmutableMultimap.of();
-        }
-
-        // Player baseline in 1.12.2: 1.0 attack damage, 4.0 attack speed.
-        Multimap<String, AttributeModifier> modifiers = HashMultimap.create(2, 1);
-        modifiers.put(SharedMonsterAttributes.ATTACK_DAMAGE.getName(),
-                new AttributeModifier(ATTACK_DAMAGE_MODIFIER, "Weapon modifier", tier.jabDamage - 1.0D, 0));
-        modifiers.put(SharedMonsterAttributes.ATTACK_SPEED.getName(),
-                new AttributeModifier(ATTACK_SPEED_MODIFIER, "Weapon modifier", tier.attackSpeed - 4.0D, 0));
-        return modifiers;
+        return slot == EntityEquipmentSlot.MAINHAND ? mainHandModifiers : NO_MODIFIERS;
     }
 
     @Override
     public boolean getIsRepairable(ItemStack toRepair, ItemStack repair) {
         return repair.getItem() == tier.repairItem;
+    }
+
+    /**
+     * A spear only attacks at a full attack charge, exactly like 1.21.11
+     * ({@code MINIMUM_ATTACK_CHARGE = 1.0}). On the client, 1.12.2 swings the
+     * arm before the item is consulted, so a refused click is dropped here
+     * instead; on the server this always returns {@code false} because the arm
+     * broadcast must not be swallowed for a legitimate jab.
+     *
+     * @see com.spearbackport.combat.SpearJabState
+     */
+    @Override
+    public boolean onEntitySwing(EntityLivingBase entity, ItemStack stack) {
+        if (!(entity instanceof EntityPlayer)) {
+            return false;
+        }
+        EntityPlayer player = (EntityPlayer) entity;
+        // isUser() is only true for the local player's EntityPlayerSP.
+        return player.isUser() && !SpearJabState.isApproved(player.ticksExisted);
     }
 
     // ------------------------------------------------------------------

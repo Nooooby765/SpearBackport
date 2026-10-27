@@ -150,6 +150,14 @@ public final class SpearModelWrapper implements IBakedModel {
             return null;
         }
 
+        // Idle fast path: a spear is held most of the time and animates almost
+        // never, so bail before any hand or item lookup. The last frame of a
+        // swing still reports progress, so the retract is not cut short.
+        float swing = player.getSwingProgress(partialTicks);
+        if (!player.isHandActive() && swing <= 0.0F) {
+            return null;
+        }
+
         boolean rightSide = type == TransformType.FIRST_PERSON_RIGHT_HAND
                 || type == TransformType.THIRD_PERSON_RIGHT_HAND;
         EnumHandSide side = rightSide ? EnumHandSide.RIGHT : EnumHandSide.LEFT;
@@ -159,7 +167,6 @@ public final class SpearModelWrapper implements IBakedModel {
             return null;
         }
         int invert = rightSide ? 1 : -1;
-        float swing = player.getSwingProgress(partialTicks);
 
         // 1.21.11 checks for item use before it looks at the swing animation, so
         // holding right click always wins over a simultaneous jab. The third
@@ -169,11 +176,24 @@ public final class SpearModelWrapper implements IBakedModel {
                 && player.getActiveItemStack().getItem() == item) {
             float timeHeld = stack.getMaxItemUseDuration() - (player.getItemInUseCount() - partialTicks + 1.0F);
             SpearUseParams params = SpearUseParams.of(material, timeHeld);
-            Matrix4f pose = SpearPose.newPose();
             if (firstPerson) {
+                // Before the rise starts and once the spear has settled back the
+                // pose is the identity: keep the cached display transform.
+                if (params.isNeutral()) {
+                    return null;
+                }
+                Matrix4f pose = SpearPose.newPose();
                 SpearPose.applyFirstPersonUse(pose, params, invert);
-            } else {
-                SpearPose.applyThirdPersonAttack(pose, swing, SpearPose.FORWARD_MOVEMENT);
+                return pose;
+            }
+
+            boolean neutral = params.isNeutral();
+            if (neutral && swing <= 0.0F) {
+                return null;
+            }
+            Matrix4f pose = SpearPose.newPose();
+            SpearPose.applyThirdPersonAttack(pose, swing, SpearPose.FORWARD_MOVEMENT);
+            if (!neutral) {
                 SpearPose.applyThirdPersonUse(pose, params, invert, swing, SpearPose.FORWARD_MOVEMENT);
             }
             return pose;

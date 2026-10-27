@@ -30,9 +30,18 @@
     `inOutElastic`, `outCubic`, `outCirc`, `inCirc`) ported one for one.
 - Vanilla's first-person WHACK is replaced with the neutral hand pose for spear jabs, so the item
   animation is not stacked on top of an −80° chop.
-- Six generated spear sounds (`item.spear.attack/hit/use` plus `wood_` variants) with the 1.21.11
-  triggers, replacing the borrowed sword sweep and strong-attack sounds. Regenerable with
-  `tools/make_spear_sounds.py`.
+- The attack-cooldown hand rise is removed for spears, matching
+  `swingAndResetAttackStrength(..., resetAttackStrength = false)`: 1.12.2 no longer resets the attack
+  meter on a jab, and the attack part of the hand height is subtracted as a safeguard. The item-swap
+  dip is preserved.
+- A left click that is not fully charged now does nothing at all, like `Minecraft#startAttack`
+  returning before the swing when `MINIMUM_ATTACK_CHARGE` rejects the attack
+  (`SpearItem.onEntitySwing` + `SpearJabState`).
+- 17 generated spear sounds matching the official `sounds.json` set one for one
+  (`item.spear.{attack,hit,use,lunge}` plus the `item.spear_wood.*` twins the wooden tier uses,
+  three randomised variants for attack/hit/lunge and one for use), replacing the borrowed sword
+  sweep and strong-attack sounds and the ender pearl throw on Lunge. Regenerable with
+  `tools/make_spear_sounds.py`, which measures and prints loudness and spectral centroid.
 - Diagonal crafting recipes using ore dictionary ingredients.
 
 ### Fixed
@@ -48,6 +57,15 @@
 - Fixed the enchantment language key (`enchantment.lunge`) and added reach/charge tooltips.
 - Fixed the crafting recipe orientation (diagonal, matching 1.21.11).
 - Replaced the ineffective end-of-tick movement restore with an `InputUpdateEvent` correction.
+- Fixed the spear slowly rising while the attack indicator refilled after every jab, which a
+  1.21.11 spear never does.
+- Fixed uncharged left clicks still swinging the arm and playing the stab animation.
+
+### Changed
+
+- `SpearItem` builds its attribute modifiers once instead of once per tooltip or equipment update.
+- The animation skips the identity pose states (start of a charge and the settled tail) and bails
+  out of the render path before any hand lookup when the spear is idle.
 
 ### Removed
 

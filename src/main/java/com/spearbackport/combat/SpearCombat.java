@@ -14,7 +14,6 @@ import net.minecraft.entity.IEntityMultiPart;
 import net.minecraft.entity.MultiPartEntityPart;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.init.SoundEvents;
 import net.minecraft.item.ItemStack;
 import net.minecraft.stats.StatList;
 import net.minecraft.util.DamageSource;
@@ -472,7 +471,7 @@ public final class SpearCombat {
 
         player.addExhaustion(4.0F * level);
         stack.damageItem(1, player);
-        play(player, SoundEvents.ENTITY_ENDERPEARL_THROW, 0.6F, 1.5F);
+        play(player, ModSounds.lunge(), 1.0F, 1.0F);
     }
 
     private static int lungeLevel(ItemStack stack) {

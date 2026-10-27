@@ -42,7 +42,14 @@ Durability and enchantability come straight from the vanilla tool materials, so 
 ### Jab (left click)
 
 - Requires a **fully charged attack meter** (`MINIMUM_ATTACK_CHARGE = 1.0`). An early click is
-  refused and does **not** reset the meter.
+  refused and does **not** reset the meter. 1.21.11 returns before the swing when
+  `cannotAttackWithItem` rejects the attack, so a refused click here does nothing at all: no arm
+  swing, no stab animation, no sound (`SpearItem.onEntitySwing`).
+- The spear's own cooldown is its attack speed, which is also the length of the 1.21.11
+  `SwingAnimation(STAB, attackDuration × 20)`. The vanilla attack meter is deliberately **not**
+  reset by a jab, exactly like `PiercingWeapon#attack` calling
+  `swingAndResetAttackStrength(..., resetAttackStrength = false)`. That is why a spear never does
+  the "tool slowly rises while the attack indicator refills" motion that swords and axes have.
 - Damage = the player's `ATTACK_DAMAGE` attribute (so Strength/Weakness and the spear's own
   modifier apply) plus Sharpness / Smite / Bane of Arthropods.
 - Applies Knockback, Fire Aspect, Looting (through the normal death path), thorns retaliation and
@@ -128,32 +135,52 @@ calls can be replayed on top of the display matrix.
 - **Composition** — the pose is multiplied onto the cached display transform, matching the
   `animation -> display -> translate(-0.5)` order of the two renderers.
 
-Two consequences are worth knowing:
+Three consequences are worth knowing:
 
 - 1.12.2 applies a horizontal WHACK to the first person hand *before* the item transform is
   consulted, so a spear jab would otherwise be a -80° chop with a thrust added on top.
   `RenderSpecificHandEvent` re-submits that hand with zero swing progress, which puts the item in
   the neutral hand pose the 1.21.11 stab expects. Nothing is drawn twice and no GL state is touched.
+- The same hook removes the **attack cooldown rise**. 1.12.2 raises the hand item from
+  `1 - cooledAttackStrength³` back to the neutral height while the attack indicator refills; 1.21.11
+  does the same in `ItemInHandRenderer.tick()`, but its stab never resets the attack meter, so the
+  spear never shows that motion. The attack part is subtracted from the hand height, leaving the
+  item-swap dip intact.
 - Third person needs to know which player is being drawn, which 1.12.2 does not provide. The player
   is published around `RenderPlayerEvent.Pre/Post` (four field writes per rendered player) and
   re-validated against the hand and the item before use.
 
 ## Sounds
 
-1.21.11 uses dedicated `item.spear.{attack,hit,use}` samples plus `wood_` variants. Those assets do
-not exist in 1.12.2, so this mod ships its own generated set with the same structure and the same
-triggers:
+1.21.11 registers exactly seven spear sound events in `assets/minecraft/sounds.json`, and this mod
+mirrors them one for one — same IDs, same variant counts, same subtitles:
 
-| Event | When | 1.21.11 equivalent |
-|-------|------|--------------------|
-| `item.spear.attack` | every valid jab, hit or whiff | `PiercingWeapon.makeSound` |
-| `item.spear.hit` | jab that connected, and each charge contact | `PiercingWeapon.makeHitSound` / `KineticWeapon.makeLocalHitSound` |
-| `item.spear.use` | right-click, i.e. the charge starts | `KineticWeapon.makeSound` |
+| Event | Variants | When | 1.21.11 equivalent |
+|-------|---------:|------|--------------------|
+| `item.spear.attack` | 3 | every valid jab, hit or whiff | `PiercingWeapon.makeSound` |
+| `item.spear.hit` | 3 | jab that connected, and each charge contact | `PiercingWeapon.makeHitSound` / `KineticWeapon.makeLocalHitSound` |
+| `item.spear.use` | 1 | right-click, i.e. the charge starts | `KineticWeapon.makeSound` |
+| `item.spear.lunge` | 3 | each jab that applies Lunge | the Lunge enchantment effect |
+| `item.spear_wood.attack` | 3 | same, wooden spear | wood material switch |
+| `item.spear_wood.hit` | 3 | same, wooden spear | wood material switch |
+| `item.spear_wood.use` | 1 | same, wooden spear | wood material switch |
 
-The sounds are synthesised by `tools/make_spear_sounds.py` (numpy + soundfile), so they are original
-assets and reproducible: a band-passed noise thrust for the attack, a pitch-gliding body plus a
-high crack for the impact, and a slow low sweep for raising the spear. The wooden tier uses the
-`wood_` variants, exactly like the material switch in `Item.Properties#spear`.
+So there are two families, not five: the **wooden** spear has its own set and every other tier shares
+the default one, exactly like `Item.Properties#spear` picking `SPEAR_WOOD_*` only for
+`ToolMaterial.WOOD`. Note the underscore: the wooden IDs are `item.spear_wood.*`, not
+`item.spear.wood_*`, and the subtitles follow the official `subtitles.item.spear*` keys.
+
+The only deliberate deviation is Lunge: the official data splits it into three separate events
+(`item.spear.lunge_1`, `_2`, `_3`, one sample each) that the game picks between. 1.12.2 randomises
+between the samples of a single event, so one `item.spear.lunge` with three variants produces the
+same audible variation with no extra code.
+
+The samples are synthesised by `tools/make_spear_sounds.py` (numpy + soundfile), so they are
+original assets and fully reproducible. The generator prints the measured loudness and spectral
+centroid of every file, and its targets were derived from the official set (48 kHz, energy packed
+into the first quarter of the file, a 3–4 kHz granular thrust, a brighter 5–6 kHz impact, a quiet
+1.2 s stance sound and a long airy Lunge rush). Texture comes from short random amplitude bursts
+rather than a smooth sweep, which is what the official spectrograms show.
 
 ## Implementation notes
 
@@ -170,9 +197,41 @@ high crack for the impact, and a slow low sweep for raising the spear. The woode
   `item/spear_in_hand` values; the texture and art are original.
 - Item sprites are stitched by the normal item-model loader (no manual atlas registration), which
   keeps the texture pipeline identical to vanilla items.
-- The animation adds no per-tick cost. Display pairs are cached per transform type, every non-hand
-  transform and every idle frame returns a cached pair without allocating, and the pose builder
-  writes straight into one `Matrix4f` with the rotations inlined (no temporary matrices).
+
+## Performance
+
+The mod is written so that holding a spear costs almost nothing and holding anything else costs
+nothing at all. There is no tick handler, no scheduled task and no polling of any kind.
+
+Always-on work, in full:
+
+| Hook | Cost when nothing is happening |
+|------|--------------------------------|
+| `RenderPlayerEvent.Pre/Post` | four field writes per rendered player per frame (publishes the player being drawn, see above) |
+| `RenderSpecificHandEvent` | one `instanceof` per rendered hand per frame |
+| `InputUpdateEvent` | two field reads per client tick |
+| `Item.onEntitySwing` | one `instanceof`, one `isUser()` and one int compare per swing |
+| `AttackEntityEvent` / `LeftClickBlock` | only on an actual interaction |
+
+The animation itself only runs while a spear is charging or jabbing:
+
+- Display pairs are cached per transform type. GUI, ground, fixed, head and every non-hand transform
+  return the cached pair directly, as does every idle frame.
+- `SpearUseParams.isNeutral()` short-circuits the two states where the pose is the identity (before
+  the rise starts and after the spear settles back), so the long tail of a charge allocates nothing
+  and does no matrix work.
+- The pose builder writes into a single `Matrix4f`; the rotations are inlined on the raw fields, so
+  there are no temporary matrices, and the only allocations per animated frame are that matrix, one
+  small immutable parameter object and the `Pair` Forge requires.
+- `SpearItem` builds its attribute modifiers once in the constructor instead of per tooltip frame.
+
+Deliberately not changed, because the trade-off would not be free:
+
+- The `Pair`/`Matrix4f` returned by `handlePerspective` is not cached and mutated: Forge copies it,
+  but the `IBakedModel` contract allows a caller to keep it, so mutating a shared instance would be a
+  silent correctness hazard for a saving of one 64-byte object per animated frame.
+- Spear sounds are 0.5-1.6 s samples with the silent head and tail trimmed, so decode memory stays
+  small without changing the audible part.
 
 ## Known limitations
 
@@ -185,6 +244,13 @@ high crack for the impact, and a slow low sweep for raising the spear. The woode
   and a third person jab keeps vanilla's WHACK arm swing underneath the stab.
 - The kinetic hit feedback (`ticksSinceKineticHitFeedback`, a 10 tick recoil) needs a server to
   client packet for every hit. It is omitted; the animation is time-driven only.
+- A refused click is invisible to the player, but 1.12.2 sends `CPacketAnimation` from
+  `EntityPlayerSP#swingArm` unconditionally and after the item has already been consulted. The
+  server therefore still broadcasts the arm swing to observers; only the local arm, the spear pose
+  and the sound are suppressed. Hiding it for observers too would need a hook 1.12.2 does not have.
+- Spam-clicking empty air still drains the vanilla attack indicator, because `Minecraft#clickMouse`
+  resets it before the item is asked. The spear's own cooldown is unaffected (`SpearJabState`
+  decides) and the hand item no longer rises with the indicator either way.
 - Lunge fires on every valid jab, including a whiff, matching `postPiercingAttack`.
 
 ## Build
@@ -199,18 +265,22 @@ Output: `build/libs/spearbackport-1.0.0.jar`
 The sound assets are committed, so building does not need Python. To regenerate them:
 
 ```powershell
-python tools/make_spear_sounds.py src/main/resources/assets/spearbackport/sounds/item
+python tools/make_spear_sounds.py src/main/resources/assets/spearbackport/sounds/item/spear
 ```
 
-Requires `numpy` and `soundfile` (which bundles a libsndfile with Vorbis support).
+Requires `numpy` and `soundfile` (which bundles a libsndfile with Vorbis support). The script prints
+the measured loudness and spectral centroid of each file so the result can be checked against the
+targets in its docstring.
 
 ## Credits
 
 Mojang for the original 1.21.11 spear design and data. Textures are the user's old-style
 16×16 and 32×32 redraws from `自绘旧版风格长矛材质/`, installed by `make_textures.py`; they are
 not copied vanilla assets. The sound set is synthesised from scratch by `tools/make_spear_sounds.py`
-and is not taken from the game. The combat values were cross-checked against the decompiled
-1.21.11/26.3 `KineticWeapon`, `PiercingWeapon`, `AttackRange` and spear item components, and the
-animation against `SpearAnimations`, `FirstPersonHandsAndItemsRenderer`, `ItemInHandLayer`,
-`HumanoidModel`, `Ease` and `Mth`.
+and contains no game audio; only its duration, loudness and spectral targets were measured from the
+official samples. The combat values were cross-checked against the decompiled 1.21.11/26.3
+`KineticWeapon`, `PiercingWeapon`, `AttackRange` and spear item components, and the animation
+against `SpearAnimations`, `FirstPersonHandsAndItemsRenderer`, `ItemInHandLayer`, `HumanoidModel`,
+`Ease` and `Mth`, plus `Minecraft#startAttack` and `ItemInHandRenderer#tick` for the attack gate and
+the first person hand height.
 
