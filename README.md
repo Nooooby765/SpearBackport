@@ -176,11 +176,24 @@ between the samples of a single event, so one `item.spear.lunge` with three vari
 same audible variation with no extra code.
 
 The samples are synthesised by `tools/make_spear_sounds.py` (numpy + soundfile), so they are
-original assets and fully reproducible. The generator prints the measured loudness and spectral
-centroid of every file, and its targets were derived from the official set (48 kHz, energy packed
-into the first quarter of the file, a 3–4 kHz granular thrust, a brighter 5–6 kHz impact, a quiet
-1.2 s stance sound and a long airy Lunge rush). Texture comes from short random amplitude bursts
-rather than a smooth sweep, which is what the official spectrograms show.
+original assets and fully reproducible — no game audio is used. Each voice is built from
+physically motivated layers (transient, gate of air, body resonance, low thock, creak train) and
+then mastered against measurements of the official files:
+
+- **Tone** — a static magnitude EQ solves the layer mix onto the eight band energy split measured
+  from the official samples, so the metal thrust gets the official 8–16 kHz shelf that makes it
+  crisp, the wooden thrust keeps its energy between 40 Hz and 1 kHz, the impact stays a bright
+  crack with almost no body, and Lunge is a 500–1000 Hz wind with air on top. Phase is untouched,
+  so every transient and every grain survives.
+- **Time** — audible length, 5%-to-peak attack, decay to −30 dB, crest factor and the envelope
+  modulation rate are matched to the same measurements (the official thrusts peak in 4–28 ms and
+  decay in 114–196 ms; the stance sound is a single creak with a crest factor around 18; Lunge is
+  a short gust rather than a long swell).
+- **Level** — normalisation is done on the *audible* region, because the official files carry long
+  silent tails and a whole-file RMS would make the set several dB too loud in game.
+
+The script prints all of those features for every file it writes, so the result can be checked
+against the targets recorded in its docstring.
 
 ## Implementation notes
 

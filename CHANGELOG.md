@@ -43,8 +43,12 @@ change behaviour, feel or assets.
 - 17 generated spear sounds matching the official `sounds.json` set one for one
   (`item.spear.{attack,hit,use,lunge}` plus the `item.spear_wood.*` twins the wooden tier uses,
   three randomised variants for attack/hit/lunge and one for use), replacing the borrowed sword
-  sweep and strong-attack sounds and the ender pearl throw on Lunge. Regenerable with
-  `tools/make_spear_sounds.py`, which measures and prints loudness and spectral centroid.
+  sweep and strong-attack sounds and the ender pearl throw on Lunge. Each voice is layered
+  (transient, air, body resonance, low thock, creak train) and then mastered onto the eight band
+  energy split, the decay, the attack time, the crest factor and the audible loudness measured from
+  the official files, so the metal thrust is crisp, the wooden one sits between 40 Hz and 1 kHz and
+  Lunge is a short gust. Regenerable with `tools/make_spear_sounds.py`, which prints every measured
+  feature it matches.
 - Diagonal crafting recipes using ore dictionary ingredients.
 
 ### Fixed
