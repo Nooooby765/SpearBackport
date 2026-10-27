@@ -1,0 +1,7 @@
+item.spearbackport.wooden_spear.name=木矛
+item.spearbackport.stone_spear.name=石矛
+item.spearbackport.golden_spear.name=金矛
+item.spearbackport.iron_spear.name=铁矛
+item.spearbackport.diamond_spear.name=钻石矛
+enchantment.lunge=突进
+enchantment.lunge.desc=戳击会将你向前推进，消耗饥饿值与 1 点耐久。

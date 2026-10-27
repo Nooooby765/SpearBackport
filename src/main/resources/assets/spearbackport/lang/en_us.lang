@@ -1,0 +1,7 @@
+item.spearbackport.wooden_spear.name=Wooden Spear
+item.spearbackport.stone_spear.name=Stone Spear
+item.spearbackport.golden_spear.name=Golden Spear
+item.spearbackport.iron_spear.name=Iron Spear
+item.spearbackport.diamond_spear.name=Diamond Spear
+enchantment.lunge=Lunge
+enchantment.lunge.desc=Jab attacks propel you forward, consuming hunger and one durability.
