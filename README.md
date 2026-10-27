@@ -208,7 +208,7 @@ Always-on work, in full:
 | Hook | Cost when nothing is happening |
 |------|--------------------------------|
 | `RenderPlayerEvent.Pre/Post` | four field writes per rendered player per frame (publishes the player being drawn, see above) |
-| `RenderSpecificHandEvent` | one `instanceof` per rendered hand per frame |
+| `RenderSpecificHandEvent` | one `instanceof` per rendered hand per frame; for a spear hand one cooldown lookup, and vanilla's own draw is kept unless the swing must be hidden or the hand height corrected |
 | `InputUpdateEvent` | two field reads per client tick |
 | `Item.onEntitySwing` | one `instanceof`, one `isUser()` and one int compare per swing |
 | `AttackEntityEvent` / `LeftClickBlock` | only on an actual interaction |
@@ -224,6 +224,9 @@ The animation itself only runs while a spear is charging or jabbing:
   there are no temporary matrices, and the only allocations per animated frame are that matrix, one
   small immutable parameter object and the `Pair` Forge requires.
 - `SpearItem` builds its attribute modifiers once in the constructor instead of per tooltip frame.
+- The charge tick leaves before sampling motion or building a look vector until the activation delay
+  has passed, and again once the charge expires, so a held right click costs one comparison per tick
+  in those two windows.
 
 Deliberately not changed, because the trade-off would not be free:
 
@@ -260,7 +263,7 @@ $env:JAVA_HOME = "F:\jdk25\jdk-25.0.4.1+1"   # any JDK 25 install
 .\gradlew.bat build
 ```
 
-Output: `build/libs/spearbackport-1.0.0.jar`
+Output: `build/libs/spearbackport-0.3.0.jar`
 
 The sound assets are committed, so building does not need Python. To regenerate them:
 

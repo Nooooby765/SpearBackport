@@ -21,9 +21,9 @@ import net.minecraftforge.fml.relauncher.Side;
  *   <li>{@link RenderPlayerEvent} publishes the player being drawn so third
  *       person items can read their charge and stab state (see
  *       {@link SpearRenderContext}).</li>
- *   <li>{@link RenderSpecificHandEvent} re-submits the first person spear hand.
- *       Two things need correcting there, and both come straight from the
- *       1.21.11 renderer and item components.</li>
+ *   <li>{@link RenderSpecificHandEvent} re-submits the first person spear hand
+ *       when it has to differ from vanilla. Two things can differ, and both come
+ *       straight from the 1.21.11 renderer and item components.</li>
  * </ul>
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID, value = Side.CLIENT)
@@ -58,41 +58,46 @@ public final class ClientRenderHandler {
         // type, so the hand is already rotated by up to -80 degrees before the
         // item transform is consulted; submitting zero swing progress is the
         // neutral hand frame the 1.21.11 stab pose is written for.
-        float swing = player.swingingHand == hand
-                && (player.isSwingInProgress || event.getSwingProgress() > 0.0F)
-                ? 0.0F : event.getSwingProgress();
+        boolean jab = player.swingingHand == hand
+                && (player.isSwingInProgress || event.getSwingProgress() > 0.0F);
+        // Vanilla only drives the main hand from the attack meter; the off hand
+        // always recovers to a constant height, so there is nothing to subtract.
+        float cooldownRise = hand == EnumHand.MAIN_HAND ? cooldownRise(player) : 0.0F;
+        if (!jab && cooldownRise <= 0.0F) {
+            // Vanilla would draw exactly this frame, so do not take it over.
+            return;
+        }
 
         event.setCanceled(true);
+        float armHeight = cooldownRise <= 0.0F
+                ? event.getEquipProgress()
+                : Math.max(0.0F, event.getEquipProgress() - cooldownRise);
         minecraft.getItemRenderer().renderItemInFirstPerson(player, event.getPartialTicks(),
-                event.getInterpolatedPitch(), hand, swing, event.getItemStack(),
-                armHeight(player, hand, event.getEquipProgress()));
+                event.getInterpolatedPitch(), hand, jab ? 0.0F : event.getSwingProgress(),
+                event.getItemStack(), armHeight);
     }
 
     /**
-     * Removes the attack-cooldown part of the vanilla hand height, which a spear
-     * must not have.
+     * How much of the vanilla hand height is the attack cooldown, in the same
+     * units as {@code inverseArmHeight} (0 = fully raised, 1 = fully lowered).
      *
-     * <p>1.12.2 moves the first person item down by
-     * {@code 1 - equippedProgress} blocks and refills {@code equippedProgress}
-     * towards {@code cooledAttackStrength³}, which is the "tool slowly rises
-     * while the attack indicator recharges" motion. 1.21.11 does the same in
+     * <p>1.12.2 moves the first person item down by {@code 1 - equippedProgress}
+     * blocks and refills {@code equippedProgress} towards
+     * {@code cooledAttackStrength³}, which is the "tool slowly rises while the
+     * attack indicator recharges" motion. 1.21.11 does the same in
      * {@code ItemInHandRenderer.tick()}, but its stab goes through
      * {@code PiercingWeapon#attack}, which calls
      * {@code swingAndResetAttackStrength(..., resetAttackStrength = false)}: a
      * spear jab never resets the attack meter, so the spear never sees that
      * motion. Swords and axes do reset it, which is why they still bob.
      *
-     * <p>Subtracting the attack term leaves only the item-swap animation, so
-     * switching to a spear still plays vanilla's equip dip.
+     * <p>Subtracting it leaves only the item-swap animation, so switching to a
+     * spear still plays vanilla's equip dip. The result is exactly zero whenever
+     * the meter is full — the normal state for a spear — so the common frame
+     * never triggers a takeover.
      */
-    private static float armHeight(EntityPlayer player, EnumHand hand, float inverseArmHeight) {
-        if (hand != EnumHand.MAIN_HAND) {
-            // Vanilla drives the off hand towards a constant 1.0, so it has no
-            // attack-cooldown component to remove.
-            return inverseArmHeight;
-        }
+    private static float cooldownRise(EntityPlayer player) {
         float charge = player.getCooledAttackStrength(1.0F);
-        float recover = 1.0F - charge * charge * charge;
-        return Math.max(0.0F, inverseArmHeight - recover);
+        return 1.0F - charge * charge * charge;
     }
 }

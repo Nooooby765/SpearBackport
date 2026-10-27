@@ -244,7 +244,10 @@ public final class SpearCombat {
         }
 
         SpearMaterial tier = ((SpearItem) stack.getItem()).getTier();
-        if (elapsed >= tier.expiresAt) {
+        // Nothing can be hit before the delay is over or after the charge
+        // expires, so leave before sampling any motion or allocating a vector.
+        int used = elapsed - tier.activationDelay;
+        if (used < 0 || elapsed >= tier.expiresAt) {
             return;
         }
 
@@ -252,11 +255,6 @@ public final class SpearCombat {
         Vec3d look = player.getLookVec();
         Motion self = motion(player, now);
         double selfSpeed = clampSpeed(self.vx * look.x + self.vy * look.y + self.vz * look.z);
-
-        int used = elapsed - tier.activationDelay;
-        if (used < 0) {
-            return;
-        }
 
         // getHitEntitiesAlong adds the attacker's forward movement to max reach.
         double extraReach = Math.max(0.0D, selfSpeed / 20.0D);

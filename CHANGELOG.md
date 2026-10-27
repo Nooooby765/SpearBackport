@@ -1,6 +1,9 @@
 # Changelog
 
-## [1.0.0] - 2026-10-27
+Pre-1.0: the backport is feature complete but still being polished, so minor versions may still
+change behaviour, feel or assets.
+
+## [0.3.0] - 2026-10-27
 
 ### Added
 
@@ -63,9 +66,15 @@
 
 ### Changed
 
+- Version reset to `0.3.0`: the backport is feature complete but still being polished, so minor
+  versions may still change behaviour, feel or assets. The mod metadata now reads the version from
+  the generated `Tags` class, so `gradle.properties` is the single source of truth.
 - `SpearItem` builds its attribute modifiers once instead of once per tooltip or equipment update.
 - The animation skips the identity pose states (start of a charge and the settled tail) and bails
   out of the render path before any hand lookup when the spear is idle.
+- The first person hand takeover is skipped entirely when nothing needs correcting, so a held spear
+  costs vanilla's own draw in the steady state.
+- The charge tick leaves before sampling motion once the charge has expired or before it activates.
 
 ### Removed
 
