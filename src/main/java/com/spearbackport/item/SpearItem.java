@@ -5,13 +5,13 @@ import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.Multimap;
 import com.spearbackport.SpearBackportMod;
 import com.spearbackport.combat.SpearCombat;
+import com.spearbackport.init.ModSounds;
 
 import net.minecraft.block.state.IBlockState;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.ai.attributes.AttributeModifier;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.init.SoundEvents;
 import net.minecraft.inventory.EntityEquipmentSlot;
 import net.minecraft.item.EnumAction;
 import net.minecraft.item.ItemStack;
@@ -107,8 +107,9 @@ public class SpearItem extends ItemSword {
         ItemStack stack = player.getHeldItem(hand);
         player.setActiveHand(hand);
         if (!world.isRemote) {
+            // KineticWeapon.makeSound: one world sound when the charge starts.
             world.playSound(null, player.posX, player.posY, player.posZ,
-                    SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, SoundCategory.PLAYERS, 0.55F, 0.9F);
+                    ModSounds.use(tier), SoundCategory.PLAYERS, 1.0F, 1.0F);
         }
         return new ActionResult<>(EnumActionResult.SUCCESS, stack);
     }

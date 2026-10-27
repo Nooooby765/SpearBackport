@@ -20,6 +20,19 @@
   jab packet for air, blocks and 3–4.5 block targets.
 - A 32×32 in-hand spear model selected through a cached display-context wrapper, using the
   official `item/spear_in_hand` transforms.
+- Procedural in-hand animation for the spear itself, first and third person, ported from the
+  1.21.11 `SpearAnimations` code:
+  - the charge pose (`raise`, `raiseStart/Middle/End`, `sway`, elastic `lower`, `raiseBack` and the
+    two sine sway terms) recomputed from the tier timings and the held time, exactly like
+    `UseParams.fromKineticWeapon`;
+  - the jab pose (`prepare` / `attack` / `retract`) driven by the swing progress;
+  - the official `Ease` curves (`inQuad`, `inOutSine`, `inOutExpo`, `outBack`, `inOutBack`,
+    `inOutElastic`, `outCubic`, `outCirc`, `inCirc`) ported one for one.
+- Vanilla's first-person WHACK is replaced with the neutral hand pose for spear jabs, so the item
+  animation is not stacked on top of an −80° chop.
+- Six generated spear sounds (`item.spear.attack/hit/use` plus `wood_` variants) with the 1.21.11
+  triggers, replacing the borrowed sword sweep and strong-attack sounds. Regenerable with
+  `tools/make_spear_sounds.py`.
 - Diagonal crafting recipes using ore dictionary ingredients.
 
 ### Fixed

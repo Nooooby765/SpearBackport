@@ -1,0 +1,68 @@
+{
+  "item.spear.attack": {
+    "category": "player",
+    "subtitle": "subtitles.spearbackport.spear_attack",
+    "sounds": [
+      {
+        "name": "spearbackport:item/spear_attack",
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    ]
+  },
+  "item.spear.wood_attack": {
+    "category": "player",
+    "subtitle": "subtitles.spearbackport.spear_attack",
+    "sounds": [
+      {
+        "name": "spearbackport:item/spear_attack_wood",
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    ]
+  },
+  "item.spear.hit": {
+    "category": "player",
+    "subtitle": "subtitles.spearbackport.spear_hit",
+    "sounds": [
+      {
+        "name": "spearbackport:item/spear_hit",
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    ]
+  },
+  "item.spear.wood_hit": {
+    "category": "player",
+    "subtitle": "subtitles.spearbackport.spear_hit",
+    "sounds": [
+      {
+        "name": "spearbackport:item/spear_hit_wood",
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    ]
+  },
+  "item.spear.use": {
+    "category": "player",
+    "subtitle": "subtitles.spearbackport.spear_use",
+    "sounds": [
+      {
+        "name": "spearbackport:item/spear_use",
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    ]
+  },
+  "item.spear.wood_use": {
+    "category": "player",
+    "subtitle": "subtitles.spearbackport.spear_use",
+    "sounds": [
+      {
+        "name": "spearbackport:item/spear_use_wood",
+        "volume": 1.0,
+        "pitch": 1.0
+      }
+    ]
+  }
+}

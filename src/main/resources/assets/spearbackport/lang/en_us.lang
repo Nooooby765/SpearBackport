@@ -5,3 +5,6 @@ item.spearbackport.iron_spear.name=Iron Spear
 item.spearbackport.diamond_spear.name=Diamond Spear
 enchantment.lunge=Lunge
 enchantment.lunge.desc=Jab attacks propel you forward, consuming hunger and one durability.
+subtitles.spearbackport.spear_attack=Spear stabs
+subtitles.spearbackport.spear_hit=Spear hits
+subtitles.spearbackport.spear_use=Spear raised

@@ -5,3 +5,6 @@ item.spearbackport.iron_spear.name=铁矛
 item.spearbackport.diamond_spear.name=钻石矛
 enchantment.lunge=突进
 enchantment.lunge.desc=戳击会将你向前推进，消耗饥饿值与 1 点耐久。
+subtitles.spearbackport.spear_attack=长矛突刺
+subtitles.spearbackport.spear_hit=长矛击中
+subtitles.spearbackport.spear_use=长矛举起

@@ -3,6 +3,7 @@ package com.spearbackport.combat;
 import com.google.common.base.Predicate;
 import com.spearbackport.SpearBackportMod;
 import com.spearbackport.init.ModEnchantments;
+import com.spearbackport.init.ModSounds;
 import com.spearbackport.item.SpearItem;
 import com.spearbackport.item.SpearMaterial;
 
@@ -170,6 +171,7 @@ public final class SpearCombat {
     private static void performJab(EntityPlayer player, ItemStack stack) {
         DamageSource source = DamageSource.causePlayerDamage(player);
         List<Entity> targets = collectTargets(player, 0.0D);
+        SpearMaterial tier = ((SpearItem) stack.getItem()).getTier();
         float baseDamage = (float) player.getEntityAttribute(SharedMonsterAttributes.ATTACK_DAMAGE).getAttributeValue();
         int fireAspect = EnchantmentHelper.getFireAspectModifier(player);
         int knockback = EnchantmentHelper.getKnockbackModifier(player);
@@ -216,10 +218,13 @@ public final class SpearCombat {
             }
         }
 
-        play(player, SoundEvents.ENTITY_PLAYER_ATTACK_SWEEP, 0.8F, 1.0F);
+        // PiercingWeapon.attack: the hit sound first, then the thrust whoosh, so
+        // that a jab that connects always carries both. A whiff still plays the
+        // whoosh, just like 1.21.11.
         if (hit) {
-            play(player, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, 1.0F, 1.0F);
+            play(player, ModSounds.hit(tier), 1.0F, 1.0F);
         }
+        play(player, ModSounds.attack(tier), 1.0F, 1.0F);
 
         // postPiercingAttack is unconditional: Lunge fires on a whiff too.
         if (player.isEntityAlive()) {
@@ -341,7 +346,7 @@ public final class SpearCombat {
         }
 
         if (hit) {
-            play(player, SoundEvents.ENTITY_PLAYER_ATTACK_STRONG, 1.0F, 1.0F);
+            play(player, ModSounds.hit(tier), 1.0F, 1.0F);
         }
     }
 

@@ -6,10 +6,13 @@ Faithfully backports the **Minecraft 1.21.11 Spear** to **Minecraft 1.12.2 Forge
 
 - **License:** MIT
 - **Build:** RetroFuturaGradle 2.0 + JDK 25, Java 8 bytecode target
-- **No mixins, no ASM, no coremod** — plain Forge events, one item-use callback, two client hooks
+- **No mixins, no ASM, no coremod** — plain Forge events, one item-use callback, three client hooks
   and one tiny client-to-server jab packet.
-- **No idle overhead:** no global tick handler. Work happens only while a player is actually
-  jabbing with a spear, holding right-click to charge, or the client is processing an input/click.
+- **Procedural in-hand animation** — the 1.21.11 charge and stab poses, replayed on the item itself
+  (first and third person) from the held time and the swing progress. No GeckoLib, no keyframes.
+- **No idle overhead:** no global tick handler, and no render work at all for an item that is not a
+  spear. Work happens only while a player is actually jabbing with a spear, holding right-click to
+  charge, or the client is processing an input/click.
 
 ## Tiers (5)
 
@@ -78,6 +81,8 @@ The spear goes through three stages. Values are the 1.21.11 release values, in t
 - The charge does not slow movement. On foot the 1.12.2 `isHandActive` 0.2x input penalty is
   cancelled in `InputUpdateEvent`; while riding vanilla skips it entirely.
 - Maximum reach is extended by the attacker's forward movement, matching `getHitEntitiesAlong`.
+- The in-hand spear plays the full 1.21.11 raise → sway → elastic lower → raise-back pose. See
+  [In-hand animation](#in-hand-animation).
 
 ### Lunge (spear-only enchantment, max III)
 
@@ -103,6 +108,53 @@ S
 `M` is the head material and `S` is a stick. Recipes use ore dictionary names
 (`plankWood`, `cobblestone`, `ingotGold`, `ingotIron`, `gemDiamond`) so modded materials work.
 
+## In-hand animation
+
+1.21.11's spear animation is not keyframed. `net.minecraft.client.model.effects.SpearAnimations`
+derives every value from the held time and the swing progress, then applies it with `PoseStack`
+calls. 1.12.2 has no comparable "before the item is drawn" hook, but `IBakedModel.handlePerspective`
+is asked for the model transform in exactly the place where 1.21.11 applies its pose, so the same
+calls can be replayed on top of the display matrix.
+
+- **Charge (`SpearAnimations.firstPersonUse` / `thirdPersonUseItem`)** — `SpearUseParams` recomputes
+  the official `UseParams` from the tier timings: `raise`, `raiseStart/Middle/End`, `sway`,
+  `lower` and `raiseBack`, plus the slow and fast sine sway. The pose is therefore a pure function of
+  `timeHeld`, with no stored state and nothing to desynchronise.
+- **Stab (`firstPersonAttack` / `thirdPersonAttackItem`)** — driven by `getSwingProgress`, using the
+  official `prepare` / `attack` / `retract` easing triple.
+- **Easing** — `SpearEase` is a direct port of `net.minecraft.util.Ease` (`inQuad`, `inOutSine`,
+  `inOutExpo`, `outBack`, `inOutBack`, `inOutElastic`, `outCubic`, `outCirc`, `inCirc`) so the curves
+  are identical rather than approximate.
+- **Composition** — the pose is multiplied onto the cached display transform, matching the
+  `animation -> display -> translate(-0.5)` order of the two renderers.
+
+Two consequences are worth knowing:
+
+- 1.12.2 applies a horizontal WHACK to the first person hand *before* the item transform is
+  consulted, so a spear jab would otherwise be a -80° chop with a thrust added on top.
+  `RenderSpecificHandEvent` re-submits that hand with zero swing progress, which puts the item in
+  the neutral hand pose the 1.21.11 stab expects. Nothing is drawn twice and no GL state is touched.
+- Third person needs to know which player is being drawn, which 1.12.2 does not provide. The player
+  is published around `RenderPlayerEvent.Pre/Post` (four field writes per rendered player) and
+  re-validated against the hand and the item before use.
+
+## Sounds
+
+1.21.11 uses dedicated `item.spear.{attack,hit,use}` samples plus `wood_` variants. Those assets do
+not exist in 1.12.2, so this mod ships its own generated set with the same structure and the same
+triggers:
+
+| Event | When | 1.21.11 equivalent |
+|-------|------|--------------------|
+| `item.spear.attack` | every valid jab, hit or whiff | `PiercingWeapon.makeSound` |
+| `item.spear.hit` | jab that connected, and each charge contact | `PiercingWeapon.makeHitSound` / `KineticWeapon.makeLocalHitSound` |
+| `item.spear.use` | right-click, i.e. the charge starts | `KineticWeapon.makeSound` |
+
+The sounds are synthesised by `tools/make_spear_sounds.py` (numpy + soundfile), so they are original
+assets and reproducible: a band-passed noise thrust for the attack, a pitch-gliding body plus a
+high crack for the impact, and a slow low sweep for raising the spear. The wooden tier uses the
+`wood_` variants, exactly like the material switch in `Item.Properties#spear`.
+
 ## Implementation notes
 
 - Combat is server-authoritative. The client sends one tiny `MessageSpearJab` for clicks that
@@ -118,13 +170,21 @@ S
   `item/spear_in_hand` values; the texture and art are original.
 - Item sprites are stitched by the normal item-model loader (no manual atlas registration), which
   keeps the texture pipeline identical to vanilla items.
+- The animation adds no per-tick cost. Display pairs are cached per transform type, every non-hand
+  transform and every idle frame returns a cached pair without allocating, and the pose builder
+  writes straight into one `Matrix4f` with the rotations inlined (no temporary matrices).
 
 ## Known limitations
 
 - Mounted AI and mob spear spawning are intentionally out of scope.
-- The three charge stages are fully mechanical and the in-hand spear is a longer 32×32 model, but
-  there is no keyframed arm/body charge animation or custom spear sound set. GeckoLib was not
-  added as a dependency: it would be a large runtime dependency for a cosmetic layer.
+- Only the **item** is animated. In 1.21.11 the arm and body follow the spear (`HumanoidModel`'s
+  SPEAR pose plus `thirdPersonAttackHand`); 1.12.2 gives no hook between the arm rotation and the
+  item transform, and doing it properly needs a custom `RenderPlayer`, an access transformer or a
+  mixin. None of those were added.
+- Because the arm is left alone, a first person jab holds the arm still and lets the spear thrust,
+  and a third person jab keeps vanilla's WHACK arm swing underneath the stab.
+- The kinetic hit feedback (`ticksSinceKineticHitFeedback`, a 10 tick recoil) needs a server to
+  client packet for every hit. It is omitted; the animation is time-driven only.
 - Lunge fires on every valid jab, including a whiff, matching `postPiercingAttack`.
 
 ## Build
@@ -136,9 +196,21 @@ $env:JAVA_HOME = "F:\jdk25\jdk-25.0.4.1+1"   # any JDK 25 install
 
 Output: `build/libs/spearbackport-1.0.0.jar`
 
+The sound assets are committed, so building does not need Python. To regenerate them:
+
+```powershell
+python tools/make_spear_sounds.py src/main/resources/assets/spearbackport/sounds/item
+```
+
+Requires `numpy` and `soundfile` (which bundles a libsndfile with Vorbis support).
+
 ## Credits
 
 Mojang for the original 1.21.11 spear design and data. Textures are the user's old-style
 16×16 and 32×32 redraws from `自绘旧版风格长矛材质/`, installed by `make_textures.py`; they are
-not copied vanilla assets. The combat values were cross-checked against the decompiled
-1.21.11/26.3 `KineticWeapon`, `PiercingWeapon`, `AttackRange` and spear item components.
+not copied vanilla assets. The sound set is synthesised from scratch by `tools/make_spear_sounds.py`
+and is not taken from the game. The combat values were cross-checked against the decompiled
+1.21.11/26.3 `KineticWeapon`, `PiercingWeapon`, `AttackRange` and spear item components, and the
+animation against `SpearAnimations`, `FirstPersonHandsAndItemsRenderer`, `ItemInHandLayer`,
+`HumanoidModel`, `Ease` and `Mth`.
+

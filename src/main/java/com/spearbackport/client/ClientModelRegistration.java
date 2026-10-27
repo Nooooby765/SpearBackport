@@ -49,7 +49,8 @@ public final class ClientModelRegistration {
             if (handBaked == null) {
                 handBaked = inventoryBaked;
             }
-            event.getModelRegistry().putObject(inventory, new SpearModelWrapper(inventoryBaked, handBaked));
+            event.getModelRegistry().putObject(inventory,
+                    new SpearModelWrapper(inventoryBaked, handBaked, spear));
         }
     }
 
