@@ -182,24 +182,64 @@ between the samples of a single event, so one `item.spear.lunge` with three vari
 same audible variation with no extra code.
 
 The samples are synthesised by `tools/make_spear_sounds.py` (numpy + soundfile), so they are
-original assets and fully reproducible — no game audio is used. Each voice is built from
-physically motivated layers (transient, gate of air, body resonance, low thock, creak train) and
-then mastered against measurements of the official files:
+original assets and fully reproducible — no game audio is used or measured. Every voice is a
+sum of physically motivated layers, all rendered at 48 kHz mono:
 
-- **Tone** — a static magnitude EQ solves the layer mix onto the eight band energy split measured
-  from the official samples, so the metal thrust gets the official 8–16 kHz shelf that makes it
-  crisp, the wooden thrust keeps its energy between 40 Hz and 1 kHz, the impact stays a bright
-  crack with almost no body, and Lunge is a 500–1000 Hz wind with air on top. Phase is untouched,
-  so every transient and every grain survives.
-- **Time** — audible length, 5%-to-peak attack, decay to −30 dB, crest factor and the envelope
-  modulation rate are matched to the same measurements (the official thrusts peak in 4–28 ms and
-  decay in 114–196 ms; the stance sound is a single creak with a crest factor around 18; Lunge is
-  a short gust rather than a long swell).
-- **Level** — normalisation is done on the *audible* region, because the official files carry long
-  silent tails and a whole-file RMS would make the set several dB too loud in game.
+- **Air / whoosh** — white noise through an STFT time-varying band mask. The band *sweeps* during
+  the sample (a fast rise to a bright centre for a thrust, a downward drift for a hit), and a
+  sparse impulse train convolves the noise with an exponential kernel to give the grainy flutter
+  of real airflow instead of flat hiss.
+- **Material layer** — the two families are built differently, because an impact on wood and an
+  impact on metal are different physical events:
+  - **Metal (every non-wooden tier)**: a very short broadband burst (10-30 ms, high-frequency
+    emphasised) *drives* a handful of damped second-order resonators. A mode is (frequency, Q),
+    its bandwidth is `f/Q` and its decay `τ = Q/(πf)`; at Q = 9-16 the resonators colour the
+    crack (bandwidth of tens to a couple of hundred Hz, gone in ~3-10 ms) instead of adding a
+    pitch. Free-running high-Q sines are never used — that is what makes an impact sound like a
+    struck glass jar. A little granular "foil" noise and a delayed low thump complete the clank.
+  - **Wood**: a sparse crackle train (splintering ticks at 0.4/0.7/1.1 kHz, ~10-25 ms) driven by
+    the contact transient, plus friction noise. Dry and dead, with no ring.
+- **Low impact** — a downward-gliding sine (e.g. 92 Hz → 50 Hz for a metal hit, 90 → 52 Hz for
+  wood) on a delay of 6-8 ms for metal so the transient leads, so a hit reads as weight rather
+  than a click.
+- **Tail** — the master stage trims the decay at −40 dB relative to peak and appends only 20 ms,
+  so a file never occupies more timeline than it sounds.
 
-The script prints all of those features for every file it writes, so the result can be checked
-against the targets recorded in its docstring.
+The metal voices therefore finish in 0.14–0.21 s: the jab is 0.14–0.17 s and the impact 0.20–0.21 s,
+i.e. **shorter than the 200-250 ms limit**, and every resonance is already below −30 dB long before
+that. The three variants inside one event differ in resonator frequencies, band sweep, timing
+offset and pitch (low / mid / high flavoured), so a jab-along-the-row never replays the same file.
+
+Wooden spears stay dry and splintery (spectral centroid ≈ 2.3 kHz for attack, 3.0–4.0 kHz for hit);
+the shared metal set sits at ≈ 4.0–4.9 kHz for the thrust and ≈ 6.2–6.5 kHz for the impact, with a
+broadband slope rather than a peak. `attack`, `hit`, `use` and `lunge` all belong to the metal
+family; only the seven `wood/` samples use the wooden voice.
+
+Levels are matched on K-weighted loudness of the audible region (a linear measure, unlike the
+gated BS.1770 integration, which would drop a short sample's quiet tail and bias the normaliser),
+then a soft-knee limiter holds the peak below 0.85–0.90. Targets are −19.3 dB (attack), −18.3 dB
+(hit), −28.3 dB (use) and −21.0 dB (lunge), which keeps `attack` + `hit` (played together on a
+connect) and `lunge` (played on top of both) from ever clipping or stacking into a shout.
+
+Regenerate and validate with:
+
+```
+python tools/make_spear_sounds.py <output-dir>
+python tools/make_spear_sounds.py --verify <output-dir>
+```
+
+The script prints seconds, peak, RMS, K-loudness, integrated LUFS, spectral centroid and crest
+factor for every file it writes, and `--verify` re-decodes each Ogg and fails on a wrong sample
+rate, more than one channel, clipping, DC offset, a missing target, or residual head/tail silence.
+
+`--verify` also reports a **tonality** column pair (`tonal ms`, `share`, `tail250`) computed from a
+21 ms STFT: `share` is the fraction of the 200 Hz-12 kHz power that sits in the single strongest
+bin of a frame. Broadband noise spreads that over hundreds of bins (share ≈ 0.05-0.10); a struck
+sine piles it into one (share > 0.3), which is the objective signature of the "glass jar" ring.
+For the metal `attack` and `hit` voices the build **fails** if a narrowband component is still
+audible after 200 ms, if the strongest post-transient bin holds more than 25 % of the band power,
+or if any bin after 250 ms holds more than 25 %. The wooden samples are reported but not gated,
+because their short splinter ticks are intentional.
 
 ## Implementation notes
 

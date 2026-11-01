@@ -1,6 +1,7 @@
 package com.spearbackport.client;
 
 import com.spearbackport.SpearBackportMod;
+import com.spearbackport.combat.SpearCombat;
 import com.spearbackport.item.SpearItem;
 
 import net.minecraft.client.Minecraft;
@@ -63,10 +64,18 @@ public final class ClientRenderHandler {
                 && (player.isSwingInProgress || event.getSwingProgress() > 0.0F);
         // Vanilla only lowers the main hand for the attack meter; the off hand
         // always recovers to a constant height. A spear must not be lowered for
-        // the meter at all, so when that is the only reason it is down, the hand
+        // the meter at all, so while vanilla would still be raising it, the hand
         // is submitted at full height instead.
+        //   ItemRenderer#updateEquippedItem moves the hand towards f³ by at most
+        // ±0.4 per tick, and the largest single step is the last one (0.214 for
+        // the fastest tier), landing on 1.0 exactly when the meter reads full.
+        // So every tick with a non-zero vanilla offset is exactly
+        // ticksSinceLastSwing < getCooldownPeriod(); from there on the
+        // interpolation is a constant 0.0 and vanilla already draws at full
+        // height. Cutting the window one tick shorter let vanilla draw the
+        // last 0.214 dip itself — the one-frame flicker when the meter filled.
         boolean cooldownDriven = hand == EnumHand.MAIN_HAND && equip > 0.0F
-                && meterRefilling(player);
+                && player.ticksSinceLastSwing < SpearCombat.cooldownTicks(player);
         if (!jab && !cooldownDriven) {
             // Vanilla would draw exactly this frame: do not take it over.
             return;
@@ -76,26 +85,5 @@ public final class ClientRenderHandler {
         minecraft.getItemRenderer().renderItemInFirstPerson(player, event.getPartialTicks(),
                 event.getInterpolatedPitch(), hand, jab ? 0.0F : event.getSwingProgress(),
                 event.getItemStack(), cooldownDriven ? 0.0F : equip);
-    }
-
-    /**
-     * True while the vanilla attack meter is refilling, i.e. while 1.12.2 would
-     * be lowering and then raising the held item.
-     *
-     * <p>1.12.2 drives the hand height towards {@code cooledAttackStrength³} and
-     * 1.21.11 does the same in {@code ItemInHandRenderer#tick}, but a 1.21.11
-     * stab goes through {@code PiercingWeapon#attack}, which calls
-     * {@code swingAndResetAttackStrength(..., resetAttackStrength = false)}: a
-     * spear never consumes the meter, so its spear never shows that motion.
-     *
-     * <p>The height is replaced with a constant rather than subtracting the
-     * analytic term: {@code equipProgress} is a per-tick value interpolated with
-     * partial ticks, while the analytic term is a per-tick step, and their
-     * difference wobbles by a fraction of a block — visible as a twitch. A
-     * constant is exact, and the only thing lost is the item-swap dip during the
-     * few ticks a refill lasts.
-     */
-    private static boolean meterRefilling(EntityPlayer player) {
-        return player.getCooledAttackStrength(1.0F) < 1.0F;
     }
 }

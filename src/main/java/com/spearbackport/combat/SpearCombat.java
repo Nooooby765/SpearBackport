@@ -84,12 +84,6 @@ public final class SpearCombat {
     /** Lunge impulse per level, in blocks per tick (1.21.11 data). */
     private static final double LUNGE_IMPULSE = 0.458D;
 
-    /**
-     * Server-side attack grace, matching the five-tick tolerance used by
-     * {@code ServerGamePacketListenerImpl} for the STAB packet.
-     */
-    private static final float SERVER_ATTACK_TOLERANCE = 5.0F;
-
     private static final Predicate<Entity> TARGET_FILTER = new Predicate<Entity>() {
         @Override
         public boolean apply(@Nullable Entity entity) {
@@ -158,8 +152,25 @@ public final class SpearCombat {
         performJab(player, stack);
     }
 
-    private static boolean isAttackReady(EntityPlayer player) {
-        return player.getCooledAttackStrength(SERVER_ATTACK_TOLERANCE) >= 1.0F;
+    /**
+     * The shortest cooldown the vanilla attack meter can already read as full:
+     * {@code ticksSinceLastSwing / getCooldownPeriod() >= 1.0}, which is exactly
+     * the tick the HUD indicator reaches 1.0. {@link Math#ceil} only undoes the
+     * float rounding of {@code 20.0 / attackSpeed} (13/15/19/19/21 for the five
+     * tiers), it is not a tolerance.
+     */
+    public static int cooldownTicks(EntityPlayer player) {
+        return (int) Math.ceil((double) player.getCooldownPeriod());
+    }
+
+    /**
+     * The strict 1.21.11 {@code MINIMUM_ATTACK_CHARGE = 1.0} gate: the meter has
+     * to read exactly full. No {@code adjustTicks} compensation and no
+     * near-full threshold, and the same tick counter the client and the HUD use,
+     * so both sides agree tick for tick.
+     */
+    public static boolean isAttackReady(EntityPlayer player) {
+        return player.ticksSinceLastSwing >= cooldownTicks(player);
     }
 
     /**
@@ -168,12 +179,15 @@ public final class SpearCombat {
      * nothing was hit (post_piercing_attack).
      */
     private static void performJab(EntityPlayer player, ItemStack stack) {
-        DamageSource source = DamageSource.causePlayerDamage(player);
+        DamageSource source = null;
         List<Entity> targets = collectTargets(player, 0.0D);
         SpearMaterial tier = ((SpearItem) stack.getItem()).getTier();
         float baseDamage = (float) player.getEntityAttribute(SharedMonsterAttributes.ATTACK_DAMAGE).getAttributeValue();
-        int fireAspect = EnchantmentHelper.getFireAspectModifier(player);
-        int knockback = EnchantmentHelper.getKnockbackModifier(player);
+        // EnchantmentHelper.getEnchantmentLevel builds a fresh map from the NBT
+        // list on every call, so both values are only read once a target really
+        // needs them (i.e. not at all for a whiff).
+        int fireAspect = -1;
+        int knockback = -1;
         float yaw = player.rotationYaw * 0.017453292F;
         double knockX = MathHelper.sin(yaw);
         double knockZ = -MathHelper.cos(yaw);
@@ -186,6 +200,9 @@ public final class SpearCombat {
                 continue;
             }
 
+            if (source == null) {
+                source = DamageSource.causePlayerDamage(player);
+            }
             float damage = baseDamage
                     + EnchantmentHelper.getModifierForCreature(stack, living.getCreatureAttribute());
             float healthBefore = living.getHealth();
@@ -193,6 +210,9 @@ public final class SpearCombat {
 
             // PiercingWeapon(deals_knockback = true): even a blocked or
             // invulnerable target is pushed back.
+            if (knockback < 0) {
+                knockback = EnchantmentHelper.getKnockbackModifier(player);
+            }
             if (hurt) {
                 if (knockback > 0) {
                     living.knockBack(player, knockback * 0.5F, knockX, knockZ);
@@ -202,6 +222,9 @@ public final class SpearCombat {
             }
 
             if (hurt) {
+                if (fireAspect < 0) {
+                    fireAspect = EnchantmentHelper.getFireAspectModifier(player);
+                }
                 applyOnHitEffects(player, living, healthBefore, fireAspect);
             } else {
                 player.setLastAttackedEntity(living);
@@ -257,16 +280,22 @@ public final class SpearCombat {
         double selfSpeed = clampSpeed(self.vx * look.x + self.vy * look.y + self.vz * look.z);
 
         // getHitEntitiesAlong adds the attacker's forward movement to max reach.
+        // The ray direction is the look vector already sampled above, so the
+        // search does not allocate a second one for the same tick.
         double extraReach = Math.max(0.0D, selfSpeed / 20.0D);
-        List<Entity> targets = collectTargets(player, extraReach);
+        List<Entity> targets = collectTargets(player, extraReach, look);
         if (targets.isEmpty()) {
             return;
         }
 
-        DamageSource source = DamageSource.causePlayerDamage(player);
+        // Created on first use: a tick that only samples motion creates neither.
+        DamageSource source = null;
         float baseDamage = (float) player.getEntityAttribute(SharedMonsterAttributes.ATTACK_DAMAGE).getBaseValue();
-        int fireAspect = EnchantmentHelper.getFireAspectModifier(player);
-        int knockback = EnchantmentHelper.getKnockbackModifier(player);
+        // EnchantmentHelper.getEnchantmentLevel builds a fresh map from the NBT
+        // list on every call; these are only read when a contact really hurts or
+        // knocks, which is the exception rather than the rule for a raised spear.
+        int fireAspect = -1;
+        int knockback = -1;
         float yaw = player.rotationYaw * 0.017453292F;
         double knockX = MathHelper.sin(yaw);
         double knockZ = -MathHelper.cos(yaw);
@@ -302,12 +331,18 @@ public final class SpearCombat {
 
             boolean hurt = false;
             if (damage) {
+                if (source == null) {
+                    source = DamageSource.causePlayerDamage(player);
+                }
                 float amount = baseDamage
                         + (float) Math.floor(closingSpeed * tier.chargeMultiplier)
                         + EnchantmentHelper.getModifierForCreature(stack, living.getCreatureAttribute());
                 float healthBefore = living.getHealth();
                 hurt = living.attackEntityFrom(source, amount);
                 if (hurt) {
+                    if (fireAspect < 0) {
+                        fireAspect = EnchantmentHelper.getFireAspectModifier(player);
+                    }
                     applyOnHitEffects(player, living, healthBefore, fireAspect);
                 }
             }
@@ -318,6 +353,9 @@ public final class SpearCombat {
             }
 
             if (knock) {
+                if (knockback < 0) {
+                    knockback = EnchantmentHelper.getKnockbackModifier(player);
+                }
                 if (hurt) {
                     if (knockback > 0) {
                         living.knockBack(player, knockback * 0.5F, knockX, knockZ);
@@ -357,9 +395,17 @@ public final class SpearCombat {
      * collision box stop the ray, so cobwebs and tall grass can be pierced.
      */
     public static List<Entity> collectTargets(EntityPlayer player, double extraReach) {
+        return collectTargets(player, extraReach, player.getLookVec());
+    }
+
+    /**
+     * Same search, with the ray direction supplied by the caller. The charge tick
+     * already samples the look vector for its speed projection, so passing it
+     * here avoids allocating a second, identical {@link Vec3d} per tick.
+     */
+    private static List<Entity> collectTargets(EntityPlayer player, double extraReach, Vec3d look) {
         double reach = (player.capabilities.isCreativeMode ? CREATIVE_REACH : MAX_REACH) + extraReach;
         Vec3d eye = player.getPositionEyes(1.0F);
-        Vec3d look = player.getLookVec();
         Vec3d end = new Vec3d(eye.x + look.x * reach, eye.y + look.y * reach, eye.z + look.z * reach);
 
         RayTraceResult blockHit = player.world.rayTraceBlocks(eye, end, false, true, false);

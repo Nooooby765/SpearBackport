@@ -1,6 +1,7 @@
 package com.spearbackport.client;
 
 import com.spearbackport.SpearBackportMod;
+import com.spearbackport.combat.SpearCombat;
 import com.spearbackport.combat.SpearJabState;
 import com.spearbackport.item.SpearItem;
 import com.spearbackport.network.MessageSpearJab;
@@ -8,7 +9,6 @@ import com.spearbackport.network.SpearNetwork;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.EntityLivingBase;
-import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.event.entity.player.AttackEntityEvent;
@@ -108,16 +108,28 @@ public final class ClientAttackHandler {
     }
 
     /**
-     * The spear's own attack cooldown: its attack speed, which is also the length
-     * of the 1.21.11 {@code SwingAnimation(STAB, attackDuration * 20)}.
+     * The spear's attack cooldown, read from the same vanilla meter the server
+     * gates on: the click is accepted only on the tick the meter reads 1.0, so
+     * the client can never approve a click the server will refuse.
      */
-    private static int period(EntityPlayer player) {
-        double speed = player.getEntityAttribute(SharedMonsterAttributes.ATTACK_SPEED).getAttributeValue();
-        return speed <= 0.0D ? 20 : (int) Math.round(20.0D / speed);
+    private static boolean ready(EntityPlayer player) {
+        return SpearCombat.isAttackReady(player);
     }
 
-    private static boolean ready(EntityPlayer player) {
-        return player.ticksExisted - lastAttackTick >= period(player);
+    /**
+     * Re-anchors the restore clock onto vanilla's own meter.
+     *
+     * <p>{@code InputUpdateEvent} runs before {@code EntityPlayer#onUpdate}
+     * bumps {@code ticksSinceLastSwing} for the current tick, so the value a
+     * click sees one tick later is {@code ticksSinceLastSwing + 1}. When the two
+     * clocks disagree, vanilla was reset behind our back (item swap, an entity
+     * click, a respawn); the anchor is moved so the next click still reads
+     * exactly {@code ticksSinceLastSwing}.
+     */
+    public static void syncCooldown(EntityPlayer player) {
+        if (player.ticksExisted - lastAttackTick != player.ticksSinceLastSwing + 1) {
+            lastAttackTick = player.ticksExisted - player.ticksSinceLastSwing - 1;
+        }
     }
 
     /**
@@ -140,7 +152,7 @@ public final class ClientAttackHandler {
             return;
         }
         int elapsed = player.ticksExisted - lastAttackTick;
-        base.ticksSinceLastSwing = Math.max(0, Math.min(elapsed, period(player)));
+        base.ticksSinceLastSwing = Math.max(0, Math.min(elapsed, SpearCombat.cooldownTicks(player)));
     }
 
     private static boolean isSpear(EntityPlayer player) {

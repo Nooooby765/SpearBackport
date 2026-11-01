@@ -19,6 +19,14 @@ import net.minecraftforge.fml.relauncher.Side;
  * immediately afterwards, leaving the original input untouched.
  *
  * <p>Riding is left alone because vanilla skips the slowdown while mounted.
+ *
+ * <p>This is the only always-subscribed hook left, and it has to be: vanilla
+ * checks {@code isHandActive()} unconditionally at {@code EntityPlayerSP} line
+ * 992, so any tick in which that bit can be true must be corrected in the same
+ * tick and between lines 989 and 992. No item lifecycle callback lands in that
+ * window. The idle cost is one virtual call resolving to the {@code handActive}
+ * boolean field ({@code EntityPlayerSP} overrides {@code isHandActive()} with a
+ * field read, it is not a data manager lookup), and nothing is allocated.
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID, value = Side.CLIENT)
 public final class ClientInputHandler {
@@ -30,7 +38,10 @@ public final class ClientInputHandler {
     @SubscribeEvent
     public static void onInputUpdate(InputUpdateEvent event) {
         EntityPlayer player = event.getEntityPlayer();
-        if (player.isRiding() || !player.isHandActive()) {
+        // Keeps the jab cooldown anchored to vanilla's meter; three int reads.
+        ClientAttackHandler.syncCooldown(player);
+        // Cheapest predicate first: the idle tick stops at the handActive field.
+        if (!player.isHandActive() || player.isRiding()) {
             return;
         }
 
