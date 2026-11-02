@@ -95,6 +95,9 @@ public final class SpearCombat {
      * Last sampled position (and, for the attacker, contact timestamps) per
      * entity. Weak keys and lazy contact maps keep this tiny: entries only exist
      * while a spear is actually being used.
+     *
+     * <p>Only the server thread touches this map: {@link #tickCharge} and the
+     * packet/attack entry points all run on it.
      */
     private static final Map<Entity, Motion> MOTIONS = new WeakHashMap<>();
 
@@ -183,9 +186,9 @@ public final class SpearCombat {
         List<Entity> targets = collectTargets(player, 0.0D);
         SpearMaterial tier = ((SpearItem) stack.getItem()).getTier();
         float baseDamage = (float) player.getEntityAttribute(SharedMonsterAttributes.ATTACK_DAMAGE).getAttributeValue();
-        // EnchantmentHelper.getEnchantmentLevel builds a fresh map from the NBT
-        // list on every call, so both values are only read once a target really
-        // needs them (i.e. not at all for a whiff).
+        // Every EnchantmentHelper read walks the stack's NBTTagList again (no
+        // cached map), so both values are only read once a target really needs
+        // them (i.e. not at all for a whiff).
         int fireAspect = -1;
         int knockback = -1;
         float yaw = player.rotationYaw * 0.017453292F;
@@ -291,9 +294,9 @@ public final class SpearCombat {
         // Created on first use: a tick that only samples motion creates neither.
         DamageSource source = null;
         float baseDamage = (float) player.getEntityAttribute(SharedMonsterAttributes.ATTACK_DAMAGE).getBaseValue();
-        // EnchantmentHelper.getEnchantmentLevel builds a fresh map from the NBT
-        // list on every call; these are only read when a contact really hurts or
-        // knocks, which is the exception rather than the rule for a raised spear.
+        // Every EnchantmentHelper read walks the stack's NBTTagList again (no
+        // cached map); these are only read when a contact really hurts or knocks,
+        // which is the exception rather than the rule for a raised spear.
         int fireAspect = -1;
         int knockback = -1;
         float yaw = player.rotationYaw * 0.017453292F;
@@ -394,7 +397,7 @@ public final class SpearCombat {
      * the current maximum reach plus {@code extraReach}. Only blocks with a
      * collision box stop the ray, so cobwebs and tall grass can be pierced.
      */
-    public static List<Entity> collectTargets(EntityPlayer player, double extraReach) {
+    private static List<Entity> collectTargets(EntityPlayer player, double extraReach) {
         return collectTargets(player, extraReach, player.getLookVec());
     }
 

@@ -15,6 +15,7 @@ import net.minecraftforge.event.entity.player.AttackEntityEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
 /**
@@ -42,6 +43,17 @@ public final class ClientAttackHandler {
     private static int lastAttackTick = -1000;
 
     private ClientAttackHandler() {}
+
+    @SubscribeEvent
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
+        EntityPlayer player = Minecraft.getMinecraft().player;
+        if (player != null) {
+            syncCooldown(player);
+        }
+    }
 
     @SubscribeEvent
     public static void onLeftClickEmpty(PlayerInteractEvent.LeftClickEmpty event) {
@@ -108,27 +120,46 @@ public final class ClientAttackHandler {
     }
 
     /**
-     * The spear's attack cooldown, read from the same vanilla meter the server
-     * gates on: the click is accepted only on the tick the meter reads 1.0, so
-     * the client can never approve a click the server will refuse.
+     * The spear's attack cooldown, on the clock {@link #syncCooldown} keeps
+     * anchored to vanilla's meter.
+     *
+     * <p>It must <b>not</b> read {@code ticksSinceLastSwing} directly. For a
+     * click at empty air, or at a block that is not solid, 1.12.2's
+     * {@code Minecraft#clickMouse} calls {@code resetCooldown()} at line 1641
+     * <em>before</em> it fires {@code ForgeHooks#onEmptyLeftClick} at line 1642,
+     * so the field this handler is called for is already 0 and every such jab
+     * would be refused forever. The anchor is the same counter measured at the
+     * start of the tick: by the invariant in {@link #syncCooldown} it reads
+     * exactly what {@code ticksSinceLastSwing} is at the click, so this is the
+     * server's {@code SpearCombat#isAttackReady} with the click's own wipe
+     * undone — the same threshold, the same tick.
      */
     private static boolean ready(EntityPlayer player) {
-        return SpearCombat.isAttackReady(player);
+        return player.ticksExisted - lastAttackTick >= SpearCombat.cooldownTicks(player);
     }
 
     /**
      * Re-anchors the restore clock onto vanilla's own meter.
      *
-     * <p>{@code InputUpdateEvent} runs before {@code EntityPlayer#onUpdate}
-     * bumps {@code ticksSinceLastSwing} for the current tick, so the value a
-     * click sees one tick later is {@code ticksSinceLastSwing + 1}. When the two
-     * clocks disagree, vanilla was reset behind our back (item swap, an entity
-     * click, a respawn); the anchor is moved so the next click still reads
-     * exactly {@code ticksSinceLastSwing}.
+     * <p>Runs at {@code TickEvent.Phase.START}, i.e. at the top of
+     * {@code Minecraft#runTick} (line 1835) and therefore <b>before</b> the
+     * mouse/keyboard section that calls {@code clickMouse} (lines 1924-1936)
+     * and before {@code World#updateEntities} (line 1974). The click of this
+     * tick is the click this anchor has to serve, and a click sees exactly the
+     * state left by the previous tick's entity update: {@code ticksExisted} and
+     * {@code ticksSinceLastSwing} as they are right here.
+     *
+     * <p>Anchoring here rather than in {@code InputUpdateEvent} is what keeps an
+     * item swap honest. {@code EntityPlayer#onUpdate} clears the meter at line
+     * 318 <em>after</em> it bumps it at line 311, i.e. during the entity update,
+     * i.e. after that tick's click. Anchoring in {@code InputUpdateEvent} would
+     * only notice the wipe on the following tick, after the click had already
+     * been measured against the stale anchor and could have sneaked through
+     * early. Anchoring at the start of the tick sees the wipe first.
      */
     public static void syncCooldown(EntityPlayer player) {
-        if (player.ticksExisted - lastAttackTick != player.ticksSinceLastSwing + 1) {
-            lastAttackTick = player.ticksExisted - player.ticksSinceLastSwing - 1;
+        if (player.ticksExisted - lastAttackTick != player.ticksSinceLastSwing) {
+            lastAttackTick = player.ticksExisted - player.ticksSinceLastSwing;
         }
     }
 

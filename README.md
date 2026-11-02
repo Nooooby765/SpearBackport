@@ -2,8 +2,6 @@
 
 Faithfully backports the **Minecraft 1.21.11 Spear** to **Minecraft 1.12.2 Forge**.
 
-![Spear item textures](docs/spear_textures_preview.png)
-
 - **License:** MIT
 - **Build:** RetroFuturaGradle 2.0 + JDK 25, Java 8 bytecode target
 - **No mixins, no ASM, no coremod** — plain Forge events, one access transformer (a single field),
@@ -182,7 +180,7 @@ between the samples of a single event, so one `item.spear.lunge` with three vari
 same audible variation with no extra code.
 
 The samples are synthesised by `tools/make_spear_sounds.py` (numpy + soundfile), so they are
-original assets and fully reproducible — no game audio is used or measured. Every voice is a
+original assets and fully reproducible — no game audio is used. Every voice is a
 sum of physically motivated layers, all rendered at 48 kHz mono:
 
 - **Air / whoosh** — white noise through an STFT time-varying band mask. The band *sweeps* during
@@ -260,14 +258,16 @@ because their short splinter ticks are intentional.
 ## Performance
 
 The mod is written so that holding a spear costs almost nothing and holding anything else costs
-nothing at all. There is no tick handler, no scheduled task and no polling of any kind.
+nothing at all. The only per-tick work is one client-tick anchor (one null check and two field
+reads); there is no server tick handler and no polling loop.
 
 Always-on work, in full:
 
 | Hook | Cost when nothing is happening |
 |------|--------------------------------|
-| `RenderPlayerEvent.Pre/Post` | four field writes per rendered player per frame (publishes the player being drawn, see above) |
-| `RenderSpecificHandEvent` | one `instanceof` and one float compare per rendered hand per frame; the hand is only taken over when the swing must be hidden or the meter is refilling, so an idle spear is drawn by vanilla itself |
+| `TickEvent.ClientTickEvent` (START) | one player null check and two field reads per client tick (re-anchors the cooldown clock) |
+| `RenderPlayerEvent.Pre/Post` | four field writes plus one null clear per rendered player per frame (publishes the player being drawn, see above) |
+| `RenderSpecificHandEvent` | one `instanceof` per rendered hand per frame; a held spear adds two field reads and two compares. The hand is only taken over when the swing must be hidden or the meter is refilling, so an idle spear is drawn by vanilla itself |
 | `InputUpdateEvent` | two field reads per client tick |
 | `Item.onEntitySwing` | one `instanceof`, one `isUser()` and one int compare per swing |
 | `AttackEntityEvent` / `LeftClickBlock` | only on an actual interaction |
@@ -279,19 +279,20 @@ The animation itself only runs while a spear is charging or jabbing:
 - `SpearUseParams.isNeutral()` short-circuits the two states where the pose is the identity (before
   the rise starts and after the spear settles back), so the long tail of a charge allocates nothing
   and does no matrix work.
-- The pose builder writes into a single `Matrix4f`; the rotations are inlined on the raw fields, so
-  there are no temporary matrices, and the only allocations per animated frame are that matrix, one
-  small immutable parameter object and the `Pair` Forge requires.
+- The pose builder writes into a single reusable `Matrix4f`; the rotations are inlined on the raw
+  fields, so there are no temporary matrices. The charge parameters and the returned `Pair` are
+  reused too, so an animated frame allocates nothing at all.
 - `SpearItem` builds its attribute modifiers once in the constructor instead of per tooltip frame.
 - The charge tick leaves before sampling motion or building a look vector until the activation delay
   has passed, and again once the charge expires, so a held right click costs one comparison per tick
   in those two windows.
 
-Deliberately not changed, because the trade-off would not be free:
+The reused pose, parameters and pair are safe because Forge's `handleCameraTransforms` copies the
+matrix into GL and reads the model before `handlePerspective` returns, so the returned pair never
+outlives the call. That assumption is what the zero-allocation frame rests on.
 
-- The `Pair`/`Matrix4f` returned by `handlePerspective` is not cached and mutated: Forge copies it,
-  but the `IBakedModel` contract allows a caller to keep it, so mutating a shared instance would be a
-  silent correctness hazard for a saving of one 64-byte object per animated frame.
+The remaining trade-off is kept because it would not be free:
+
 - Spear sounds are 0.5-1.6 s samples with the silent head and tail trimmed, so decode memory stays
   small without changing the audible part.
 
@@ -319,7 +320,7 @@ $env:JAVA_HOME = "F:\jdk25\jdk-25.0.4.1+1"   # any JDK 25 install
 .\gradlew.bat build
 ```
 
-Output: `build/libs/spearbackport-0.4.0.jar`
+Output: `build/libs/spearbackport-<mod_version>.jar`
 
 The sound assets are committed, so building does not need Python. To regenerate them:
 
@@ -334,7 +335,7 @@ targets in its docstring.
 ## Credits
 
 Mojang for the original 1.21.11 spear design and data. Textures are the user's old-style
-16×16 and 32×32 redraws from `自绘旧版风格长矛材质/`, installed by `make_textures.py`; they are
+16×16 and 32×32 redraws from `自绘旧版风格长矛材质/`; they are
 not copied vanilla assets. The sound set is synthesised from scratch by `tools/make_spear_sounds.py`
 and contains no game audio; only its duration, loudness and spectral targets were measured from the
 official samples. The combat values were cross-checked against the decompiled 1.21.11/26.3

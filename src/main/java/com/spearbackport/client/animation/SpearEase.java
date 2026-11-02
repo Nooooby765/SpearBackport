@@ -21,7 +21,7 @@ public final class SpearEase {
     // Interpolation helpers (Mth.progress / Mth.clamp)
     // ------------------------------------------------------------------
 
-    /** {@code Mth.clamp(Mth.inverseLerp(time, start, end), 0, 1)}, NaN-safe. */
+    /** {@code Mth.clamp(Mth.inverseLerp(time, start, end), 0, 1)}. */
     public static float progress(float time, float start, float end) {
         float span = end - start;
         if (span <= 0.0F) {

@@ -3,6 +3,51 @@
 Pre-1.0: the backport is feature complete but still being polished, so minor versions may still
 change behaviour, feel or assets.
 
+## [0.4.3] - 2026-11-01
+
+### Changed
+
+- Code hygiene only, with no gameplay change: the registered-spear list and the two-argument target
+  query are now private to their own classes, an unused import was removed, and the comments about
+  allocation, render-context writes and interpolation clamping now match the code.
+- Documentation resynchronised with the implementation: an animated frame reuses its pose matrix,
+  charge parameters and model pair and therefore allocates nothing (the README previously said the
+  opposite), the build output is named as `spearbackport-<mod_version>.jar`, and a missing preview
+  image link plus a stale `make_textures.py` reference were removed.
+
+## [0.4.2] - 2026-11-01
+
+### Fixed
+
+- The first-person spear no longer dips when a charge starts. 1.12.2 zeroes the hand's
+  equip progress on every successful right click (`Minecraft#rightClickMouse`), and vanilla
+  then lifts the held item back over about three ticks; that dip was layered on top of the
+  opening raise and read as a hitch. While a spear is actually in use the first-person hand
+  is now drawn at the constant 1.21.11 height (`equip = 0`, i.e. the `-0.52` offset of the
+  1.21.11 SPEAR branch), so the charge starts smoothly. The charge curve itself is untouched.
+
+## [0.4.1] - 2026-11-01
+
+### Fixed
+
+- Restored the left click. The 0.4.0 client gate read `ticksSinceLastSwing` directly, but
+  `Minecraft#clickMouse` clears it at line 1641 *before* it fires `LeftClickEmpty` at line 1642, so
+  every jab at air or a non-solid block saw a zeroed meter and was refused forever. The gate now
+  reads the spear's own anchored clock, which is re-anchored to the vanilla meter at the top of
+  every client tick (`TickEvent.Phase.START`, before the mouse and keyboard sections), so a click
+  sees exactly the meter vanilla would show and the refused click's wipe is undone.
+- No early jab after an item swap: the anchor now runs before the tick's click, so the meter that
+  `EntityPlayer#onUpdate` clears on a held-item change is noticed before it can be read stale.
+
+### Changed
+
+- The attack gate is the full cooldown on both sides: no `adjustTicks` compensation, no near-full
+  threshold, and the server's five-tick tolerance is gone.
+- The one-frame hand twitch when the meter filled is fixed: the first-person takeover now covers
+  every tick with a non-zero vanilla hand offset.
+- Hit sounds for the non-wooden tiers reworked, with the wooden tier keeping its own separate
+  voice set (`item.spear_wood.*`), i.e. two sound families.
+
 ## [0.4.0] - 2026-10-27
 
 ### Added

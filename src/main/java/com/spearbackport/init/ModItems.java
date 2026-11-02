@@ -29,8 +29,8 @@ public final class ModItems {
     public static SpearItem IRON_SPEAR;
     public static SpearItem DIAMOND_SPEAR;
 
-    /** Immutable view of every registered spear, for model baking and iteration. */
-    public static final List<SpearItem> SPEARS = new ArrayList<SpearItem>(5);
+    /** Every registered spear; filled once during {@link #registerItems}. */
+    private static final List<SpearItem> SPEARS = new ArrayList<SpearItem>(5);
 
     private ModItems() {}
 

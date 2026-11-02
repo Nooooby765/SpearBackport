@@ -6,7 +6,6 @@ import com.spearbackport.item.SpearItem;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
-import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.EnumHand;
 import net.minecraftforge.client.event.RenderPlayerEvent;
 import net.minecraftforge.client.event.RenderSpecificHandEvent;
@@ -24,7 +23,7 @@ import net.minecraftforge.fml.relauncher.Side;
  *       {@link SpearRenderContext}).</li>
  *   <li>{@link RenderSpecificHandEvent} re-submits the first person spear hand,
  *       but only on the frames where it would actually differ from vanilla.
- *       Idle frames cost one {@code instanceof} and one float compare.</li>
+ *       Idle frames cost one {@code instanceof} and one int compare.</li>
  * </ul>
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID, value = Side.CLIENT)
@@ -67,16 +66,30 @@ public final class ClientRenderHandler {
         // the meter at all, so while vanilla would still be raising it, the hand
         // is submitted at full height instead.
         //   ItemRenderer#updateEquippedItem moves the hand towards f³ by at most
-        // ±0.4 per tick, and the largest single step is the last one (0.214 for
-        // the fastest tier), landing on 1.0 exactly when the meter reads full.
-        // So every tick with a non-zero vanilla offset is exactly
-        // ticksSinceLastSwing < getCooldownPeriod(); from there on the
-        // interpolation is a constant 0.0 and vanilla already draws at full
-        // height. Cutting the window one tick shorter let vanilla draw the
-        // last 0.214 dip itself — the one-frame flicker when the meter filled.
+        // ±0.4 per frame, and the largest single step is the last one (0.214 for
+        // the fastest tier). That step lands on 1.0 at ticksSinceLastSwing ==
+        // cooldownTicks - 1, where only the first frame of the tick still shows
+        // the interpolation; afterwards vanilla already draws at full height.
+        // Cutting the window one tick shorter let vanilla draw that last 0.214
+        // dip itself — the one-frame flicker when the meter filled.
+        //   The window ends one tick past the step (<=). Vanilla reads exactly
+        // 0.0F on that tick, so both branches submit the same transform; the
+        // extra tick only matters when a single frame straddles the boundary
+        // (a hitch below 20 fps), where the tick counter has already jumped past
+        // the step while the frame still interpolates it.
         boolean cooldownDriven = hand == EnumHand.MAIN_HAND && equip > 0.0F
-                && player.ticksSinceLastSwing < SpearCombat.cooldownTicks(player);
-        if (!jab && !cooldownDriven) {
+                && player.ticksSinceLastSwing <= SpearCombat.cooldownTicks(player);
+        // 1.21.11 keeps the using spear at a constant height: its SPEAR branch
+        // never applies inverseArmHeight (FirstPersonHandsAndItemsRenderer L447
+        // uses the literal -0.52). 1.12.2 resets the equip progress on every
+        // successful right click (Minecraft#rightClickMouse L1714), so the hand
+        // sinks for the three ticks it takes to lerp back, right as the charge
+        // starts. Submitting equip = 0 for the whole use keeps the constant
+        // height instead of trading it for that dip.
+        boolean charging = player.getItemInUseCount() > 0
+                && player.getActiveItemStack().getItem() instanceof SpearItem
+                && player.getActiveHand() == hand;
+        if (!jab && !cooldownDriven && !charging) {
             // Vanilla would draw exactly this frame: do not take it over.
             return;
         }
@@ -84,6 +97,6 @@ public final class ClientRenderHandler {
         event.setCanceled(true);
         minecraft.getItemRenderer().renderItemInFirstPerson(player, event.getPartialTicks(),
                 event.getInterpolatedPitch(), hand, jab ? 0.0F : event.getSwingProgress(),
-                event.getItemStack(), cooldownDriven ? 0.0F : equip);
+                event.getItemStack(), (cooldownDriven || charging) ? 0.0F : equip);
     }
 }

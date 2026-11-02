@@ -10,8 +10,8 @@ import net.minecraft.entity.player.EntityPlayer;
  * there. Third person items are drawn by {@code LayerHeldItem} during a player
  * render, are given no entity, and the renderer has no hook between the arm
  * transform and the item transform — so the current player is tracked around
- * {@code RenderPlayerEvent.Pre/Post} instead. That costs four field writes per
- * rendered player and nothing at all per tick.
+ * {@code RenderPlayerEvent.Pre/Post} instead. That costs four field writes plus
+ * one null clear per rendered player and nothing at all per tick.
  *
  * <p>The save/restore is a stack of depth one rather than a plain clear, so a
  * nested player render cannot lose the outer player. If another mod cancels
