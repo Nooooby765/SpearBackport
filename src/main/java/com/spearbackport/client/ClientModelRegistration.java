@@ -17,9 +17,8 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
 /**
- * Registers both models for every spear and installs the display-context
- * wrapper at bake time. Item sprites are stitched by the normal item-model
- * loader; no manual atlas registration is involved.
+ * Registers both models per spear and installs the wrapper at bake time; item
+ * sprites are stitched by the normal loader, so no manual atlas registration.
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID, value = Side.CLIENT)
 public final class ClientModelRegistration {

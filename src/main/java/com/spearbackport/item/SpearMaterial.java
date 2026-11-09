@@ -6,16 +6,9 @@ import net.minecraft.item.Item;
 import net.minecraft.item.Item.ToolMaterial;
 
 /**
- * Every per-tier spear statistic, taken from the 1.21.11 Java Edition data.
- *
- * <p>Jab damage and attack speed are the final tooltip values. The attribute
- * modifiers applied by {@link SpearItem} are derived from them against the
- * 1.12.2 player baseline (1.0 attack damage, 4.0 attack speed).
- *
- * <p>Charge-attack timing is expressed in ticks. The three stages are
- * <em>engaged</em> (dismount + knockback + damage), <em>tired</em> (knockback +
- * damage) and <em>disengaged</em> (damage only). 1.21.11 release-candidate
- * values are used for the second and third stages.
+ * Per-tier statistics from 1.21.11 data; jab damage and attack speed are final
+ * tooltip values, and the modifiers in {@link SpearItem} are derived against the
+ * 1.12.2 baseline (1.0 damage, 4.0 speed).
  */
 public enum SpearMaterial {
     //                     name       material            jab   attack speed      mult   repair                                       activate engaged tired disengage dismount
@@ -28,31 +21,21 @@ public enum SpearMaterial {
     public final String registryName;
     public final ToolMaterial toolMaterial;
 
-    /** Final jab attack damage shown in the tooltip. */
     public final float jabDamage;
-    /** Final attack speed in attacks per second (20 / cooldown ticks). */
+    /** Attacks per second ({@code 20 / cooldown ticks}). */
     public final float attackSpeed;
-    /** Charge damage multiplier applied to the closing speed in blocks/second. */
     public final float chargeMultiplier;
-    /** Item consumed by anvil repair. */
     public final Item repairItem;
 
-    /** Ticks between starting the charge and the first possible hit. */
     public final int activationDelay;
-    /** Engaged-stage length in ticks. */
     public final int engagedDuration;
-    /** Tired-stage length in ticks. */
     public final int tiredDuration;
-    /** Disengaged-stage length in ticks. */
     public final int disengagedDuration;
-    /** Attacker speed (blocks/second) needed to dismount a target during the engaged stage. */
+    /** Blocks/second needed to dismount during the engaged stage. */
     public final double dismountSpeed;
 
-    /** First tick at which the tired stage starts. */
     public final int tiredAt;
-    /** First tick at which the disengaged stage starts. */
     public final int disengagedAt;
-    /** First tick at which the spear stops dealing damage. */
     public final int expiresAt;
 
     SpearMaterial(String registryName, ToolMaterial toolMaterial, float jabDamage, float attackSpeed,

@@ -38,45 +38,26 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 /**
- * All spear combat logic.
- *
- * <p>The behaviour mirrors the decompiled 1.21.11/26.3 spear components:
- * <ul>
- *   <li>jab damage is the player's {@code ATTACK_DAMAGE} plus Sharpness-family
- *       enchantments, the jab has a forced 100% charge and no crit/sweep, and it
- *       applies knockback even when the target takes no damage;</li>
- *   <li>charge damage is {@code base_attack_damage + floor(closing_speed * mult)}
- *       and is independent of the attack cooldown and of Strength;</li>
- *   <li>each charge target has a <b>10 tick contact cooldown</b>, exactly like
- *       {@code KineticWeapon.contactCooldownTicks};</li>
- *   <li>dismount, knockback and damage are three independent conditions, so a
- *       slow contact can still dismount or knock back without hurting;</li>
- *   <li>Lunge is applied by {@code postPiercingAttack}, i.e. on every valid jab,
- *       including a whiff.</li>
- * </ul>
- *
- * <p>There is no global tick loop. The only entry points are an attack event, a
- * block-click check and the item-use tick of a spear that is actually held.
+ * Spear combat as in the 1.21.11 components: a jab ignores charge, crit and sweep;
+ * charge damage is {@code base + floor(closing_speed * mult)}; dismount, knockback
+ * and damage are independent; Lunge fires even on a whiff.
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID)
 public final class SpearCombat {
 
-    /** Blocks closer than this cannot be hit (the spear's dead zone). */
+    /** Dead zone for both blocks and entities. */
     public static final double MIN_REACH = 2.0D;
-    /** Survival attack range. */
     public static final double MAX_REACH = 4.5D;
-    /** Creative mode adds two blocks, exactly like other weapons. */
     public static final double CREATIVE_REACH = 6.5D;
-    /** Both jab and charge attacks inflate target hitboxes by this much. */
     public static final double HITBOX_MARGIN = 0.125D;
 
-    /** Minimum closing speed (blocks/second) for a charge attack to deal damage. */
+    /** Blocks/second. */
     public static final double CHARGE_DAMAGE_MIN_SPEED = 4.6D;
-    /** Minimum forward speed (blocks/second) for a charge attack to knock back. */
+    /** Blocks/second. */
     public static final double CHARGE_KNOCKBACK_MIN_SPEED = 5.1D;
-    /** Ticks between two charge contacts with the same target. */
+    /** Ticks. */
     public static final int CHARGE_CONTACT_COOLDOWN = 10;
-    /** Base charge knockback strength; the Knockback enchantment adds to it. */
+    /** The Knockback enchantment adds to this. */
     public static final float CHARGE_KNOCKBACK_STRENGTH = 0.4F;
     /** Sanity cap for teleports / broken velocity packets. */
     private static final double MAX_TRACKED_SPEED = 100.0D;
@@ -92,26 +73,16 @@ public final class SpearCombat {
     };
 
     /**
-     * Last sampled position (and, for the attacker, contact timestamps) per
-     * entity. Weak keys and lazy contact maps keep this tiny: entries only exist
-     * while a spear is actually being used.
-     *
-     * <p>Only the server thread touches this map: {@link #tickCharge} and the
-     * packet/attack entry points all run on it.
+     * Last sample per entity, weak keys; server main thread only ({@link #tickCharge}
+     * and the packet/attack entry points all run there).
      */
     private static final Map<Entity, Motion> MOTIONS = new WeakHashMap<>();
 
     private SpearCombat() {}
 
-    // ------------------------------------------------------------------
-    // Jab attack (left click)
-    // ------------------------------------------------------------------
-
     /**
-     * Entity clicks still travel through vanilla's {@code CPacketUseEntity}, so
-     * this event is the server-side entry point for a jab that the client
-     * actually aimed at an entity. The event is cancelled on both sides: the
-     * client must not predict crits, sweep or durability.
+     * Server-side entry point for a jab aimed at an entity. Cancelled on both
+     * sides so the client never predicts crit, sweep or durability.
      */
     @SubscribeEvent
     public static void onAttackEntity(AttackEntityEvent event) {
@@ -135,11 +106,7 @@ public final class SpearCombat {
         performJab(player, stack);
     }
 
-    /**
-     * Entry point for the lightweight client packet. It covers empty air and
-     * blocks (where vanilla never fires an entity attack) and targets 3..4.5
-     * blocks away (where vanilla's picker cannot reach).
-     */
+    /** Covers empty air and blocks, where vanilla never fires an entity attack. */
     public static void handleJabPacket(EntityPlayer player) {
         if (player.world.isRemote || player.isSpectator()) {
             return;
@@ -156,39 +123,26 @@ public final class SpearCombat {
     }
 
     /**
-     * The shortest cooldown the vanilla attack meter can already read as full:
-     * {@code ticksSinceLastSwing / getCooldownPeriod() >= 1.0}, which is exactly
-     * the tick the HUD indicator reaches 1.0. {@link Math#ceil} only undoes the
-     * float rounding of {@code 20.0 / attackSpeed} (13/15/19/19/21 for the five
-     * tiers), it is not a tolerance.
+     * First tick at which the HUD meter reads 1.0; {@link Math#ceil} only undoes
+     * the float rounding of {@code 20.0 / attackSpeed} (13/15/19/19/21).
      */
     public static int cooldownTicks(EntityPlayer player) {
         return (int) Math.ceil((double) player.getCooldownPeriod());
     }
 
-    /**
-     * The strict 1.21.11 {@code MINIMUM_ATTACK_CHARGE = 1.0} gate: the meter has
-     * to read exactly full. No {@code adjustTicks} compensation and no
-     * near-full threshold, and the same tick counter the client and the HUD use,
-     * so both sides agree tick for tick.
-     */
+    /** The strict 1.21.11 {@code MINIMUM_ATTACK_CHARGE = 1.0} gate, on the counter the HUD uses. */
     public static boolean isAttackReady(EntityPlayer player) {
         return player.ticksSinceLastSwing >= cooldownTicks(player);
     }
 
-    /**
-     * One jab. Hits every target along the spear ray, consumes one durability
-     * and 0.1 exhaustion per affected target, then runs the Lunge effect even if
-     * nothing was hit (post_piercing_attack).
-     */
+    /** One jab; Lunge runs even on a whiff (1.21.11 {@code post_piercing_attack}). */
     private static void performJab(EntityPlayer player, ItemStack stack) {
         DamageSource source = null;
         List<Entity> targets = collectTargets(player, 0.0D);
         SpearMaterial tier = ((SpearItem) stack.getItem()).getTier();
         float baseDamage = (float) player.getEntityAttribute(SharedMonsterAttributes.ATTACK_DAMAGE).getAttributeValue();
-        // Every EnchantmentHelper read walks the stack's NBTTagList again (no
-        // cached map), so both values are only read once a target really needs
-        // them (i.e. not at all for a whiff).
+        // Every EnchantmentHelper read walks the stack's NBT again (no cached map),
+        // so both values are read lazily, never on a whiff.
         int fireAspect = -1;
         int knockback = -1;
         float yaw = player.rotationYaw * 0.017453292F;
@@ -243,9 +197,8 @@ public final class SpearCombat {
             }
         }
 
-        // PiercingWeapon.attack: the hit sound first, then the thrust whoosh, so
-        // that a jab that connects always carries both. A whiff still plays the
-        // whoosh, just like 1.21.11.
+        // PiercingWeapon.attack: hit sound first, then the thrust whoosh, so a
+        // connecting jab carries both; a whiff still plays the whoosh.
         if (hit) {
             play(player, ModSounds.hit(tier), 1.0F, 1.0F);
         }
@@ -257,10 +210,6 @@ public final class SpearCombat {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Charge attack (right hold)
-    // ------------------------------------------------------------------
-
     public static void tickCharge(ItemStack stack, EntityPlayer player, int elapsed) {
         if (player.world.isRemote || player.isSpectator()) {
             return;
@@ -270,8 +219,7 @@ public final class SpearCombat {
         }
 
         SpearMaterial tier = ((SpearItem) stack.getItem()).getTier();
-        // Nothing can be hit before the delay is over or after the charge
-        // expires, so leave before sampling any motion or allocating a vector.
+        // Nothing can be hit before the delay or after expiry: leave before sampling motion.
         int used = elapsed - tier.activationDelay;
         if (used < 0 || elapsed >= tier.expiresAt) {
             return;
@@ -282,9 +230,7 @@ public final class SpearCombat {
         Motion self = motion(player, now);
         double selfSpeed = clampSpeed(self.vx * look.x + self.vy * look.y + self.vz * look.z);
 
-        // getHitEntitiesAlong adds the attacker's forward movement to max reach.
-        // The ray direction is the look vector already sampled above, so the
-        // search does not allocate a second one for the same tick.
+        // Forward movement extends max reach; the look vector is reused from above.
         double extraReach = Math.max(0.0D, selfSpeed / 20.0D);
         List<Entity> targets = collectTargets(player, extraReach, look);
         if (targets.isEmpty()) {
@@ -294,15 +240,12 @@ public final class SpearCombat {
         // Created on first use: a tick that only samples motion creates neither.
         DamageSource source = null;
         float baseDamage = (float) player.getEntityAttribute(SharedMonsterAttributes.ATTACK_DAMAGE).getBaseValue();
-        // Every EnchantmentHelper read walks the stack's NBTTagList again (no
-        // cached map); these are only read when a contact really hurts or knocks,
-        // which is the exception rather than the rule for a raised spear.
+        // Lazy, as in performJab: an idle raised spear never pays for the NBT walk.
         int fireAspect = -1;
         int knockback = -1;
         float yaw = player.rotationYaw * 0.017453292F;
         double knockX = MathHelper.sin(yaw);
         double knockZ = -MathHelper.cos(yaw);
-        int totalTicks = tier.engagedDuration + tier.tiredDuration + tier.disengagedDuration;
         boolean hit = false;
 
         for (Entity target : targets) {
@@ -311,8 +254,7 @@ public final class SpearCombat {
                 continue;
             }
 
-            // Sample the target every tick so the velocity stays fresh even
-            // while its contact cooldown is running.
+            // Sample every tick so the velocity stays fresh across the contact cooldown.
             Motion other = motion(living, now);
             if (!self.markContact(target, now)) {
                 continue;
@@ -325,8 +267,8 @@ public final class SpearCombat {
                     && selfSpeed >= tier.dismountSpeed;
             boolean knock = used <= tier.engagedDuration + tier.tiredDuration
                     && selfSpeed >= CHARGE_KNOCKBACK_MIN_SPEED;
-            boolean damage = used <= totalTicks
-                    && closingSpeed >= CHARGE_DAMAGE_MIN_SPEED;
+            // The early return already bounds elapsed below expiresAt, so no stage needs one.
+            boolean damage = closingSpeed >= CHARGE_DAMAGE_MIN_SPEED;
 
             if (!dismount && !knock && !damage) {
                 continue;
@@ -388,24 +330,15 @@ public final class SpearCombat {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Shared helpers
-    // ------------------------------------------------------------------
-
     /**
-     * Every living entity hit by the spear ray between {@link #MIN_REACH} and
-     * the current maximum reach plus {@code extraReach}. Only blocks with a
-     * collision box stop the ray, so cobwebs and tall grass can be pierced.
+     * Every entity on the spear ray between {@link #MIN_REACH} and reach plus
+     * {@code extraReach}; only blocks with a collision box stop the ray, so
+     * cobwebs and tall grass can be pierced.
      */
     private static List<Entity> collectTargets(EntityPlayer player, double extraReach) {
         return collectTargets(player, extraReach, player.getLookVec());
     }
 
-    /**
-     * Same search, with the ray direction supplied by the caller. The charge tick
-     * already samples the look vector for its speed projection, so passing it
-     * here avoids allocating a second, identical {@link Vec3d} per tick.
-     */
     private static List<Entity> collectTargets(EntityPlayer player, double extraReach, Vec3d look) {
         double reach = (player.capabilities.isCreativeMode ? CREATIVE_REACH : MAX_REACH) + extraReach;
         Vec3d eye = player.getPositionEyes(1.0F);
@@ -455,9 +388,7 @@ public final class SpearCombat {
         return result;
     }
 
-    /**
-     * Maps the ender dragon's multi-part hitboxes back to the damageable parent.
-     */
+    /** Maps the ender dragon's multi-part hitboxes back to the damageable parent. */
     @Nullable
     private static Entity resolveTarget(Entity entity) {
         if (entity instanceof EntityLivingBase) {
@@ -477,7 +408,6 @@ public final class SpearCombat {
         return entity instanceof EntityLivingBase ? (EntityLivingBase) entity : null;
     }
 
-    /** Fire Aspect, thorns, Bane slowness, statistics and damage particles. */
     private static void applyOnHitEffects(EntityPlayer player, EntityLivingBase target,
                                           float healthBefore, int fireAspect) {
         if (fireAspect > 0 && !target.isBurning()) {
@@ -502,8 +432,8 @@ public final class SpearCombat {
     }
 
     /**
-     * Lunge: a horizontal impulse paid for with hunger and one durability.
-     * 1.21.11 requires no minimum hunger; that requirement only appears in 26.3.
+     * Lunge: a horizontal impulse paid with hunger and one durability; 1.21.11 has
+     * no minimum hunger (that only appears in 26.3).
      */
     private static void applyLunge(EntityPlayer player, ItemStack stack, int level) {
         if (level <= 0 || player.isRiding() || player.isElytraFlying() || player.isInWater()) {
@@ -535,8 +465,8 @@ public final class SpearCombat {
     }
 
     /**
-     * Samples an entity once per tick. Velocity is in blocks/second; the
-     * attacker's sample also owns the per-target charge contact timestamps.
+     * Samples once per tick; velocity is blocks/second and the attacker's sample
+     * also owns the per-target contact timestamps.
      */
     private static Motion motion(Entity entity, int tick) {
         Motion motion = MOTIONS.get(entity);
@@ -583,7 +513,6 @@ public final class SpearCombat {
             this.tick = tick;
         }
 
-        /** Returns false when this target is still cooling down; otherwise marks the contact. */
         boolean markContact(Entity target, int now) {
             if (this.contacts == null) {
                 this.contacts = new WeakHashMap<>();
@@ -596,10 +525,6 @@ public final class SpearCombat {
             return true;
         }
     }
-
-    // ------------------------------------------------------------------
-    // Block protection: a spear always jabs, never mines
-    // ------------------------------------------------------------------
 
     @SubscribeEvent
     public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {

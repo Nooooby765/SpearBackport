@@ -1,25 +1,15 @@
 package com.spearbackport.client.animation;
 
 /**
- * The easing and interpolation primitives used by 1.21.11's procedural spear
- * animation, ported one function at a time from {@code net.minecraft.util.Ease}
- * and {@code net.minecraft.util.Mth}, so the curves match the official ones
- * exactly.
- *
- * <p>{@code Mth.sin}/{@code Mth.cos} are plain {@link Math} calls in 1.21.11, so
- * they are used here too instead of 1.12.2's {@code MathHelper} lookup table.
- * Only the curves the spear actually uses are implemented; there is no state and
- * nothing to initialise, so this class costs nothing at runtime.
+ * 1.21.11's {@code Ease} and {@code Mth} primitives, ported one function at a
+ * time; {@code Mth.sin}/{@code cos} are plain {@link Math} there too, so no 1.12.2
+ * lookup table. Stateless.
  */
 public final class SpearEase {
 
     private static final float DEG_TO_RAD = (float) Math.PI / 180.0F;
 
     private SpearEase() {}
-
-    // ------------------------------------------------------------------
-    // Interpolation helpers (Mth.progress / Mth.clamp)
-    // ------------------------------------------------------------------
 
     /** {@code Mth.clamp(Mth.inverseLerp(time, start, end), 0, 1)}. */
     public static float progress(float time, float start, float end) {
@@ -30,10 +20,6 @@ public final class SpearEase {
         float value = (time - start) / span;
         return value < 0.0F ? 0.0F : (value > 1.0F ? 1.0F : value);
     }
-
-    // ------------------------------------------------------------------
-    // Easing curves
-    // ------------------------------------------------------------------
 
     public static float inQuad(float x) {
         return x * x;
@@ -91,7 +77,6 @@ public final class SpearEase {
         return (float) (Math.pow(2.0D, -20.0D * x + 10.0D) * sin / 2.0D + 1.0D);
     }
 
-    /** {@code Mth.sin} of an angle in degrees, the way {@code UseParams} calls it. */
     public static float sinDegrees(float degrees) {
         return (float) Math.sin(degrees * DEG_TO_RAD);
     }

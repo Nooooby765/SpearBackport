@@ -14,11 +14,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Registers and exposes the five spear items.
- *
- * <p>We keep direct static references set during {@link #registerItems} instead of relying on
- * {@code @ObjectHolder} reflection injection — this is robust across mappings and lets preInit
- * read the items immediately after registration.
+ * Registers the five spears into direct static fields instead of
+ * {@code @ObjectHolder} reflection, so they are readable right after registration.
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID)
 public final class ModItems {
@@ -29,7 +26,6 @@ public final class ModItems {
     public static SpearItem IRON_SPEAR;
     public static SpearItem DIAMOND_SPEAR;
 
-    /** Every registered spear; filled once during {@link #registerItems}. */
     private static final List<SpearItem> SPEARS = new ArrayList<SpearItem>(5);
 
     private ModItems() {}

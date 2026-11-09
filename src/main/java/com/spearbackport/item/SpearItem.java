@@ -23,32 +23,18 @@ import net.minecraft.util.SoundCategory;
 import net.minecraft.world.World;
 
 /**
- * The spear item. All combat math lives in {@link SpearCombat}:
- * <ul>
- *   <li><b>Jab</b> (left click) is handled by a small server-side listener on
- *       {@code AttackEntityEvent}. That gives us the 2..4.5 block reach window,
- *       multi-target piercing, no crits and the forced 100% attack charge
- *       without a mixin.</li>
- *   <li><b>Charge</b> (right hold) is driven by the vanilla item-use lifecycle;
- *       {@link #onUsingTick} forwards to {@link SpearCombat#tickCharge}.</li>
- * </ul>
- *
- * <p>Extending {@link ItemSword} gives us sword enchantment compatibility
- * (Sharpness, Smite, Bane of Arthropods, Knockback, Fire Aspect, Looting,
- * Unbreaking, Mending) and the standard durability/enchantability rules for
- * free.
+ * The spear item; all combat math lives in {@link SpearCombat}. Extending
+ * {@link ItemSword} gives sword enchantment compatibility and the standard
+ * durability rules.
  */
 public class SpearItem extends ItemSword {
 
-    // Do not redeclare ATTACK_DAMAGE_MODIFIER / ATTACK_SPEED_MODIFIER.
-    // ItemStack.getTooltip() compares those UUIDs with ==, so the exact static
-    // Item fields inherited here must be used or the tooltip shows generic
-    // (red/blue) modifier lines instead of the weapon totals.
+    // Do not redeclare these UUIDs: ItemStack.getTooltip() compares them with ==,
+    // so the inherited Item fields must be used or the tooltip shows generic lines.
 
     /** Hold time is effectively "until released"; the charge itself expires first. */
     private static final int USE_DURATION = 72000;
 
-    /** Shared empty result for the slots a spear never modifies. */
     private static final Multimap<String, AttributeModifier> NO_MODIFIERS = ImmutableMultimap.of();
 
     private final SpearMaterial tier;
@@ -76,10 +62,6 @@ public class SpearItem extends ItemSword {
         return tier;
     }
 
-    // ------------------------------------------------------------------
-    // Attributes
-    // ------------------------------------------------------------------
-
     @Override
     public Multimap<String, AttributeModifier> getAttributeModifiers(EntityEquipmentSlot slot, ItemStack stack) {
         return slot == EntityEquipmentSlot.MAINHAND ? mainHandModifiers : NO_MODIFIERS;
@@ -91,11 +73,9 @@ public class SpearItem extends ItemSword {
     }
 
     /**
-     * A spear only attacks at a full attack charge, exactly like 1.21.11
-     * ({@code MINIMUM_ATTACK_CHARGE = 1.0}). On the client, 1.12.2 swings the
-     * arm before the item is consulted, so a refused click is dropped here
-     * instead; on the server this always returns {@code false} because the arm
-     * broadcast must not be swallowed for a legitimate jab.
+     * True swallows the swing for a refused click (1.21.11's
+     * {@code MINIMUM_ATTACK_CHARGE} gate); {@code isUser()} is false on the
+     * server, so a real jab still swings.
      *
      * @see com.spearbackport.combat.SpearJabState
      */
@@ -105,13 +85,8 @@ public class SpearItem extends ItemSword {
             return false;
         }
         EntityPlayer player = (EntityPlayer) entity;
-        // isUser() is only true for the local player's EntityPlayerSP.
         return player.isUser() && !SpearJabState.isApproved(player.ticksExisted);
     }
-
-    // ------------------------------------------------------------------
-    // Item use lifecycle (charge attack)
-    // ------------------------------------------------------------------
 
     @Override
     public int getMaxItemUseDuration(ItemStack stack) {
@@ -120,8 +95,8 @@ public class SpearItem extends ItemSword {
 
     @Override
     public EnumAction getItemUseAction(ItemStack stack) {
-        // NONE keeps the vanilla bow-style draw pose and the 0.2x movement
-        // slowdown out of the way; ClientInputHandler cancels that slowdown.
+        // NONE avoids the bow-style draw pose and the 0.2x slowdown, which
+        // ClientInputHandler cancels.
         return EnumAction.NONE;
     }
 
@@ -144,16 +119,7 @@ public class SpearItem extends ItemSword {
         }
     }
 
-    // ------------------------------------------------------------------
-    // Block breaking
-    // ------------------------------------------------------------------
-
-    /**
-     * A spear performs a jab instead of mining, so it can never break blocks.
-     * Returning -1 makes every block unbreakable with this item; the click
-     * itself is also cancelled in {@code SpearCombat} so no block interaction
-     * or break progress leaks through.
-     */
+    /** Weapons, not tools: no block-breaking speed and no mining at all. */
     @Override
     public float getDestroySpeed(ItemStack stack, IBlockState state) {
         return -1.0F;

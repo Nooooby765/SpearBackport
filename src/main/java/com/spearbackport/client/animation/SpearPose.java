@@ -3,48 +3,30 @@ package com.spearbackport.client.animation;
 import javax.vecmath.Matrix4f;
 
 /**
- * Builds the item pose for the spear animations, one-to-one with the
- * {@code PoseStack} calls in 1.21.11's {@code SpearAnimations}.
- *
- * <p>1.12.2 hands a {@code IBakedModel} a plain {@link Matrix4f} that Forge
- * multiplies onto the current GL matrix, so every {@code translate} /
- * {@code rotateAround} below is a <em>right</em> multiplication, exactly like
- * {@code PoseStack}. All the rotation math is inlined on the raw matrix fields:
- * the only allocation is the matrix the caller asks for.
- *
- * <p>The matrices are applied <em>before</em> the item's own display transform,
- * which matches 1.21.11 where the animation runs before {@code item.submit}.
+ * Builds the pose with the {@code PoseStack} calls of 1.21.11's
+ * {@code SpearAnimations}, inlined on raw matrix fields; the pose runs before the
+ * item's own display transform, as in 1.21.11.
  */
 public final class SpearPose {
 
     /** {@code KineticWeapon.forwardMovement} of the 1.21.11 spear. */
     public static final float FORWARD_MOVEMENT = 0.38F;
 
-    /** Local pivot the third person use animation rotates around. */
     private static final float USE_PIVOT_Y = -0.03125F;
-    /** Local pivot the third person stab rotates around. */
     private static final float ATTACK_PIVOT_Y = -0.125F;
-    /** Depth of the spear model inside the hand frame. */
     private static final float ITEM_IN_HAND_DEPTH = 0.125F;
 
     private SpearPose() {}
 
     /**
-     * A new identity pose.
-     *
-     * <p>{@code javax.vecmath.Matrix4f} has no identity default constructor: its
-     * no-argument constructor zeroes every element, so a pose has to be
-     * initialised explicitly. This factory is the only place that happens.
+     * A new identity pose; {@code javax.vecmath.Matrix4f} has no identity default
+     * constructor, its no-argument constructor zeroes every element.
      */
     public static Matrix4f newPose() {
         Matrix4f pose = new Matrix4f();
         pose.setIdentity();
         return pose;
     }
-
-    // ------------------------------------------------------------------
-    // First person
-    // ------------------------------------------------------------------
 
     /** {@code SpearAnimations.firstPersonUse}, the right-click charge pose. */
     public static void applyFirstPersonUse(Matrix4f m, SpearUseParams p, int invert) {

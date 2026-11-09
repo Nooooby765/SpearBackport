@@ -7,11 +7,8 @@ import net.minecraftforge.fml.common.network.simpleimpl.SimpleNetworkWrapper;
 import net.minecraftforge.fml.relauncher.Side;
 
 /**
- * One tiny client-to-server packet, used because 1.12.2 only sends an attack
- * packet when the vanilla picker found an entity within three blocks. The spear
- * must be able to jab empty air (for Lunge), blocks, and targets up to 4.5
- * blocks away, so the client sends this packet instead of relying on
- * {@code CPacketUseEntity}.
+ * One tiny client-to-server packet: 1.12.2 would otherwise only attack an
+ * entity the vanilla three-block picker found.
  */
 public final class SpearNetwork {
 

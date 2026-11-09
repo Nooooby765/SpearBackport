@@ -14,17 +14,8 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
 /**
- * The two client render hooks the item animation needs. Neither does any work
- * per tick; both only run while something is actually being drawn.
- *
- * <ul>
- *   <li>{@link RenderPlayerEvent} publishes the player being drawn so third
- *       person items can read their charge and stab state (see
- *       {@link SpearRenderContext}).</li>
- *   <li>{@link RenderSpecificHandEvent} re-submits the first person spear hand,
- *       but only on the frames where it would actually differ from vanilla.
- *       Idle frames cost one {@code instanceof} and one int compare.</li>
- * </ul>
+ * Publishes the drawn player ({@link RenderPlayerEvent}) and re-submits the first
+ * person spear hand on frames where vanilla would differ.
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID, value = Side.CLIENT)
 public final class ClientRenderHandler {
@@ -55,42 +46,21 @@ public final class ClientRenderHandler {
 
         EnumHand hand = event.getHand();
         float equip = event.getEquipProgress();
-        // A jab must not keep the vanilla WHACK. 1.12.2 has no per-item swing
-        // type, so the hand is already rotated by up to -80 degrees before the
-        // item transform is consulted; submitting zero swing progress is the
-        // neutral hand frame the 1.21.11 stab pose is written for.
+        // 1.12.2 has no per-item swing type and rotates the hand by up to -80
+        // degrees, so a stab must submit zero swing progress.
         boolean jab = player.swingingHand == hand
                 && (player.isSwingInProgress || event.getSwingProgress() > 0.0F);
-        // Vanilla only lowers the main hand for the attack meter; the off hand
-        // always recovers to a constant height. A spear must not be lowered for
-        // the meter at all, so while vanilla would still be raising it, the hand
-        // is submitted at full height instead.
-        //   ItemRenderer#updateEquippedItem moves the hand towards f³ by at most
-        // ±0.4 per frame, and the largest single step is the last one (0.214 for
-        // the fastest tier). That step lands on 1.0 at ticksSinceLastSwing ==
-        // cooldownTicks - 1, where only the first frame of the tick still shows
-        // the interpolation; afterwards vanilla already draws at full height.
-        // Cutting the window one tick shorter let vanilla draw that last 0.214
-        // dip itself — the one-frame flicker when the meter filled.
-        //   The window ends one tick past the step (<=). Vanilla reads exactly
-        // 0.0F on that tick, so both branches submit the same transform; the
-        // extra tick only matters when a single frame straddles the boundary
-        // (a hitch below 20 fps), where the tick counter has already jumped past
-        // the step while the frame still interpolates it.
+        // Vanilla lowers only the main hand, towards f³ (ItemRenderer L634), so
+        // take over while it is still raising; the extra tick (<=) is harmless
+        // because vanilla reads exactly 0.0F there (L341).
         boolean cooldownDriven = hand == EnumHand.MAIN_HAND && equip > 0.0F
                 && player.ticksSinceLastSwing <= SpearCombat.cooldownTicks(player);
-        // 1.21.11 keeps the using spear at a constant height: its SPEAR branch
-        // never applies inverseArmHeight (FirstPersonHandsAndItemsRenderer L447
-        // uses the literal -0.52). 1.12.2 resets the equip progress on every
-        // successful right click (Minecraft#rightClickMouse L1714), so the hand
-        // sinks for the three ticks it takes to lerp back, right as the charge
-        // starts. Submitting equip = 0 for the whole use keeps the constant
-        // height instead of trading it for that dip.
+        // 1.21.11 holds the spear at a constant height (renderer L447, literal
+        // -0.52); 1.12.2 resets equip progress per right click (L1714), so pass 0.
         boolean charging = player.getItemInUseCount() > 0
                 && player.getActiveItemStack().getItem() instanceof SpearItem
                 && player.getActiveHand() == hand;
         if (!jab && !cooldownDriven && !charging) {
-            // Vanilla would draw exactly this frame: do not take it over.
             return;
         }
 

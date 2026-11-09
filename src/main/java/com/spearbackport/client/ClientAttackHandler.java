@@ -19,27 +19,15 @@ import net.minecraftforge.fml.common.gameevent.TickEvent;
 import net.minecraftforge.fml.relauncher.Side;
 
 /**
- * Client-side jab plumbing.
- *
- * <p>Vanilla 1.12.2 only sends {@code CPacketUseEntity} when its three-block
- * picker found an entity. A spear must be able to jab empty air (to trigger
- * Lunge), blocks, and targets up to 4.5 blocks away. Every left click with a
- * spear therefore sends one tiny {@link MessageSpearJab}; the server owns the
- * ray test, the range check, the multi-target damage and the cooldown.
- *
- * <p>Entity clicks still go through vanilla's own attack packet. That packet
- * triggers {@code AttackEntityEvent} on the server, which runs the same jab
- * routine, so a click never produces two attacks.
- *
- * <p>Both paths also decide whether the swing that vanilla is about to play
- * belongs to a real jab (see {@link SpearJabState}); a refused click must not
- * animate anything, which is what 1.21.11 does with
- * {@code MINIMUM_ATTACK_CHARGE}.
+ * Every left click sends a {@link MessageSpearJab} because 1.12.2 only attacks
+ * what its three-block picker found; entity clicks ride vanilla's packet into the
+ * same routine, so a click never attacks twice. Both paths record the swing
+ * decision in {@link SpearJabState}.
  */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID, value = Side.CLIENT)
 public final class ClientAttackHandler {
 
-    /** Tick of the last jab, used as the spear's own attack cooldown. */
+    /** Tick of the last jab; {@code -1000} predates any tick so the first jab is always ready. */
     private static int lastAttackTick = -1000;
 
     private ClientAttackHandler() {}
@@ -73,9 +61,8 @@ public final class ClientAttackHandler {
     }
 
     /**
-     * Vanilla sends the entity attack packet itself, so this only mirrors the
-     * decision for the swing. It also keeps the manual air/block path from
-     * firing a second jab before the cooldown is ready.
+     * Vanilla sends the entity packet itself, so this only mirrors the swing
+     * decision and blocks a second jab from the air/block path.
      */
     @SubscribeEvent(receiveCanceled = true)
     public static void onAttackEntity(AttackEntityEvent event) {
@@ -112,7 +99,6 @@ public final class ClientAttackHandler {
         SpearNetwork.CHANNEL.sendToServer(new MessageSpearJab());
     }
 
-    /** The click became a jab: let it swing and start the cooldown. */
     private static void accept(EntityPlayer player) {
         lastAttackTick = player.ticksExisted;
         player.resetCooldown();
@@ -120,42 +106,19 @@ public final class ClientAttackHandler {
     }
 
     /**
-     * The spear's attack cooldown, on the clock {@link #syncCooldown} keeps
-     * anchored to vanilla's meter.
-     *
-     * <p>It must <b>not</b> read {@code ticksSinceLastSwing} directly. For a
-     * click at empty air, or at a block that is not solid, 1.12.2's
-     * {@code Minecraft#clickMouse} calls {@code resetCooldown()} at line 1641
-     * <em>before</em> it fires {@code ForgeHooks#onEmptyLeftClick} at line 1642,
-     * so the field this handler is called for is already 0 and every such jab
-     * would be refused forever. The anchor is the same counter measured at the
-     * start of the tick: by the invariant in {@link #syncCooldown} it reads
-     * exactly what {@code ticksSinceLastSwing} is at the click, so this is the
-     * server's {@code SpearCombat#isAttackReady} with the click's own wipe
-     * undone — the same threshold, the same tick.
+     * Must not read {@code ticksSinceLastSwing}: {@code Minecraft#clickMouse} calls
+     * {@code resetCooldown()} at L1641 before firing {@code LeftClickEmpty} at
+     * L1642, so an air click would be refused forever. The anchor is the same
+     * counter sampled at tick start.
      */
     private static boolean ready(EntityPlayer player) {
         return player.ticksExisted - lastAttackTick >= SpearCombat.cooldownTicks(player);
     }
 
     /**
-     * Re-anchors the restore clock onto vanilla's own meter.
-     *
-     * <p>Runs at {@code TickEvent.Phase.START}, i.e. at the top of
-     * {@code Minecraft#runTick} (line 1835) and therefore <b>before</b> the
-     * mouse/keyboard section that calls {@code clickMouse} (lines 1924-1936)
-     * and before {@code World#updateEntities} (line 1974). The click of this
-     * tick is the click this anchor has to serve, and a click sees exactly the
-     * state left by the previous tick's entity update: {@code ticksExisted} and
-     * {@code ticksSinceLastSwing} as they are right here.
-     *
-     * <p>Anchoring here rather than in {@code InputUpdateEvent} is what keeps an
-     * item swap honest. {@code EntityPlayer#onUpdate} clears the meter at line
-     * 318 <em>after</em> it bumps it at line 311, i.e. during the entity update,
-     * i.e. after that tick's click. Anchoring in {@code InputUpdateEvent} would
-     * only notice the wipe on the following tick, after the click had already
-     * been measured against the stale anchor and could have sneaked through
-     * early. Anchoring at the start of the tick sees the wipe first.
+     * {@code Phase.START} runs before the mouse section of {@code Minecraft#runTick}
+     * (L1924-1936) and before the entity update (L1974), so a click sees the
+     * previous tick's state; the item-swap meter wipe at L318 therefore lands first.
      */
     public static void syncCooldown(EntityPlayer player) {
         if (player.ticksExisted - lastAttackTick != player.ticksSinceLastSwing) {
@@ -164,22 +127,13 @@ public final class ClientAttackHandler {
     }
 
     /**
-     * Undoes the attack meter that 1.12.2 emptied for a click that did nothing.
-     *
-     * <p>{@code Minecraft#clickMouse} calls {@code Player#resetCooldown()}
-     * unconditionally for a click at empty air, before the item is even
-     * consulted, so the HUD bar would restart as if the spear had swung. A spear
-     * jab must not cost anything, so the value is put back — from
-     * {@link #lastAttackTick}, which is the authority, so the bar lands exactly
-     * where it was instead of jumping.
-     *
-     * <p>The write needs {@code EntityLivingBase.ticksSinceLastSwing}, which has
-     * no public setter; {@code spearbackport_at.cfg} opens it up.
+     * Restores the meter {@code clickMouse} emptied at L1641 for a refused click,
+     * using the AT-opened {@code EntityLivingBase.ticksSinceLastSwing}.
      */
     private static void restoreMeter(EntityPlayer player) {
         EntityLivingBase base = player;
         if (base.ticksSinceLastSwing != 0) {
-            // Nothing was consumed by this click, so there is nothing to restore.
+            // Only a refused click leaves the meter at 0.
             return;
         }
         int elapsed = player.ticksExisted - lastAttackTick;

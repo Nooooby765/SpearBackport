@@ -3,6 +3,25 @@
 Pre-1.0: the backport is feature complete but still being polished, so minor versions may still
 change behaviour, feel or assets.
 
+## [0.4.5] - 2026-11-09
+
+### Changed
+
+- No code change: a final comment sweep removed restatements and duplicated invariants, taking comment lines from 428 to 239 (12.0% of all source lines).
+
+## [0.4.4] - 2026-11-09
+
+### Changed
+
+- No gameplay change. The charge tick no longer evaluates a stage bound that the preceding
+  expiry check already guarantees (`used <= totalTicks` was always true), and the unused local
+  it read was dropped.
+- Comments were cut back across the mod: long explanatory blocks now keep only the reason
+  (engine behaviour, line references, equivalence arguments) and drop restatements of what the
+  code already says. Comment lines fell from 625 to 428 (31.5% of them gone); every invariant
+  (`MOTIONS` threading, the per-call reuse of the model pair, the AT, the cooldown anchor and
+  the hand-over window) still has a one-line note.
+
 ## [0.4.3] - 2026-11-01
 
 ### Changed

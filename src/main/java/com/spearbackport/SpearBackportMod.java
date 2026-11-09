@@ -13,19 +13,14 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent;
 import net.minecraftforge.fml.common.registry.GameRegistry;
 
 /**
- * Entry point. Items and enchantments register themselves through
- * {@code @Mod.EventBusSubscriber} classes; this class wires the network channel
- * and adds the crafting recipes.
+ * Entry point: wires the network channel and adds the crafting recipes. Items and
+ * enchantments register themselves through {@code @Mod.EventBusSubscriber} classes.
  */
 @Mod(modid = SpearBackportMod.MOD_ID, name = SpearBackportMod.MOD_NAME, version = SpearBackportMod.VERSION,
         acceptedMinecraftVersions = "[1.12.2]")
 public class SpearBackportMod {
 
-    /**
-     * Taken from the {@code Tags} class that RetroFuturaGradle generates from
-     * {@code tags.properties}, which in turn reads {@code gradle.properties}, so
-     * the mod metadata can never drift from the declared version.
-     */
+    /** Generated from {@code gradle.properties} by RetroFuturaGradle, so metadata cannot drift. */
     public static final String MOD_ID = Tags.MOD_ID;
     public static final String MOD_NAME = Tags.MOD_NAME;
     public static final String VERSION = Tags.VERSION;
@@ -40,15 +35,7 @@ public class SpearBackportMod {
         registerRecipes();
     }
 
-    /**
-     * Diagonal recipe, exactly like 1.21.11:
-     * <pre>
-     *   M
-     *  S
-     * S
-     * </pre>
-     * Ore dictionary names are used so modded planks/ingots/gems work too.
-     */
+    /** Diagonal pattern as in 1.21.11; ore dictionary names also accept modded planks and ingots. */
     private void registerRecipes() {
         addSpearRecipe(ModItems.WOODEN_SPEAR, "plankWood");
         addSpearRecipe(ModItems.GOLDEN_SPEAR, "ingotGold");

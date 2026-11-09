@@ -26,29 +26,13 @@ import javax.vecmath.Matrix4f;
 import java.util.List;
 
 /**
- * Selects between the 16x16 inventory icon and the long 32x32 in-hand model,
- * mirroring the 26.3 {@code display_context} item model: GUI, ground and fixed
- * use the icon; first person, third person and head use the long model.
- *
- * <p>It also adds the procedural in-hand animation. 1.21.11 drives the spear
- * from {@code SpearAnimations}, which is plain math over the held time and the
- * swing progress rather than keyframes; 1.12.2 has no comparable hook, but
- * {@code handlePerspective} is asked for the transform of the model in exactly
- * the place where 1.21.11 applies its pose, so the same calls can be replayed
- * directly on top of the display matrix.
- *
- * <p>Cost: the display pairs are resolved once and cached per transform type.
- * Every transform that is not a hand transform returns a cached pair directly,
- * and so does every frame in which the spear is neither charging nor jabbing.
- * While it is animating, the pose matrix, the charge parameters and the returned
- * pair are all reused in place (one set per transform type), so an animating
- * frame allocates nothing either. Reusing them is safe because Forge's
- * {@code handleCameraTransforms} copies the matrix into GL and reads the model
- * before it returns — the returned pair never outlives the call.
+ * Swaps the 16x16 icon for the long in-hand model and replays the 1.21.11 pose
+ * where 1.21.11 applies it; the pose matrix, charge parameters and returned pair
+ * are reused in place, safe because Forge copies the matrix and reads the model
+ * before {@code handleCameraTransforms} returns.
  */
 public final class SpearModelWrapper implements IBakedModel {
 
-    /** The transform types that can carry the animation. */
     private static final boolean[] ANIMATED = new boolean[TransformType.values().length];
 
     static {
@@ -69,11 +53,9 @@ public final class SpearModelWrapper implements IBakedModel {
 
     /** One reusable pose per animated transform type; null for the others. */
     private final Matrix4f[] poseScratch = new Matrix4f[TransformType.values().length];
-    /** One reusable result pair per animated transform type; null for the others. */
     @SuppressWarnings("unchecked")
     private final MutablePair<IBakedModel, Matrix4f>[] animatedPairs =
             new MutablePair[TransformType.values().length];
-    /** Reusable charge parameters, refilled on every animating frame. */
     private final SpearUseParams useParams = new SpearUseParams();
 
     public SpearModelWrapper(IBakedModel inventory, IBakedModel hand, SpearItem item) {
@@ -136,8 +118,8 @@ public final class SpearModelWrapper implements IBakedModel {
             return base;
         }
 
-        // The display transform is applied first; the animation happens in the
-        // hand frame in front of it, exactly like 1.21.11's PoseStack order.
+        // The display transform is applied first; the animation runs in the hand
+        // frame in front of it, exactly like 1.21.11's PoseStack order.
         Matrix4f display = base.getRight();
         if (display != null) {
             animation.mul(display);
@@ -148,10 +130,6 @@ public final class SpearModelWrapper implements IBakedModel {
         return pair;
     }
 
-    /**
-     * Returns the animation matrix for the given hand transform, or {@code null}
-     * when this hand is not holding this spear or nothing is playing.
-     */
     private Matrix4f pose(TransformType type) {
         boolean firstPerson = type == TransformType.FIRST_PERSON_LEFT_HAND
                 || type == TransformType.FIRST_PERSON_RIGHT_HAND;
@@ -171,14 +149,8 @@ public final class SpearModelWrapper implements IBakedModel {
             return null;
         }
 
-        // Idle fast path: a spear is held most of the time and animates almost
-        // never, so bail before any hand or item lookup. The last frame of a
-        // swing still reports progress, so the retract is not cut short.
-        //
-        // isHandActive() is a plain field read on the local player (EntityPlayerSP
-        // overrides it) and a DataManager lookup plus an unbox on any other
-        // player drawn in third person, so it is sampled once here and reused by
-        // the charge branch below instead of being queried twice per frame.
+        // Idle fast path: a held spear animates almost never. isHandActive() is a
+        // DataManager lookup on other players, so it is sampled once and reused below.
         boolean active = player.isHandActive();
         float swing = player.getSwingProgress(partialTicks);
         if (!active && swing <= 0.0F) {
@@ -195,22 +167,14 @@ public final class SpearModelWrapper implements IBakedModel {
         }
         int invert = rightSide ? 1 : -1;
 
-        // 1.21.11 checks for item use before it looks at the swing animation, so
-        // holding right click always wins over a simultaneous jab. The third
-        // person item layer is the exception: it stacks the stab and the charge
-        // pose, while the first person renderer only ever applies one of them.
-        //
-        // The isHandActive() result is reused from the idle fast path; nothing
-        // between the two reads can change the hand state, so the predicate is
-        // exactly the same but costs one DataManager lookup instead of two.
-        // getActiveItemStack() is a plain field, so its identity check stays.
+        // 1.21.11 checks item use before the swing, so right click wins over a
+        // simultaneous jab; third person stacks both poses, first person uses one.
         if (active && player.getActiveHand() == hand
                 && player.getActiveItemStack().getItem() == item) {
             float timeHeld = stack.getMaxItemUseDuration() - (player.getItemInUseCount() - partialTicks + 1.0F);
             SpearUseParams params = useParams.fill(material, timeHeld);
             if (firstPerson) {
-                // Before the rise starts and once the spear has settled back the
-                // pose is the identity: keep the cached display transform.
+                // Neutral before the rise and after settling: keep the cached transform.
                 if (params.isNeutral()) {
                     return null;
                 }
@@ -244,11 +208,6 @@ public final class SpearModelWrapper implements IBakedModel {
         return pose;
     }
 
-    /**
-     * Resets and returns the reusable pose for this transform type. Every pose
-     * starts at the identity, exactly like the per-frame {@code Matrix4f} it
-     * replaces, so the numbers fed to the matrix primitives are unchanged.
-     */
     private Matrix4f beginPose(TransformType type) {
         Matrix4f pose = poseScratch[type.ordinal()];
         pose.setIdentity();

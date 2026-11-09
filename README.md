@@ -151,8 +151,8 @@ Three consequences are worth knowing:
   is exact; the only thing lost is the item-swap dip during the few ticks a refill lasts, and idle
   frames never take the hand over at all.
 - Third person needs to know which player is being drawn, which 1.12.2 does not provide. The player
-  is published around `RenderPlayerEvent.Pre/Post` (four field writes per rendered player) and
-  re-validated against the hand and the item before use.
+  is published around `RenderPlayerEvent.Pre/Post` (seven static writes per rendered player: four to
+  save and publish, three to restore) and re-validated against the hand and the item before use.
 
 ## Sounds
 
@@ -265,10 +265,10 @@ Always-on work, in full:
 
 | Hook | Cost when nothing is happening |
 |------|--------------------------------|
-| `TickEvent.ClientTickEvent` (START) | one player null check and two field reads per client tick (re-anchors the cooldown clock) |
-| `RenderPlayerEvent.Pre/Post` | four field writes plus one null clear per rendered player per frame (publishes the player being drawn, see above) |
-| `RenderSpecificHandEvent` | one `instanceof` per rendered hand per frame; a held spear adds two field reads and two compares. The hand is only taken over when the swing must be hidden or the meter is refilling, so an idle spear is drawn by vanilla itself |
-| `InputUpdateEvent` | two field reads per client tick |
+| `TickEvent.ClientTickEvent` (START) | a phase check, a player null check and five field reads per client tick (re-anchors the cooldown clock) |
+| `RenderPlayerEvent.Pre/Post` | seven static writes per rendered player per frame: four to save and publish, three to restore (see above) |
+| `RenderSpecificHandEvent` | two field reads and one `instanceof` per rendered hand per frame; a held spear adds about a dozen field reads and four compares, and only takes the hand over when the swing must be hidden or the meter is refilling, so an idle spear is drawn by vanilla itself |
+| `InputUpdateEvent` | three field reads per client tick |
 | `Item.onEntitySwing` | one `instanceof`, one `isUser()` and one int compare per swing |
 | `AttackEntityEvent` / `LeftClickBlock` | only on an actual interaction |
 

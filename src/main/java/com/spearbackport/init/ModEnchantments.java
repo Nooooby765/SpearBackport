@@ -8,10 +8,7 @@ import net.minecraftforge.event.RegistryEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
 
-/**
- * Registers Lunge and keeps a direct reference so combat code never depends on
- * {@code @ObjectHolder} reflection.
- */
+/** Registers Lunge and keeps a direct reference for combat code. */
 @Mod.EventBusSubscriber(modid = SpearBackportMod.MOD_ID)
 public final class ModEnchantments {
 
